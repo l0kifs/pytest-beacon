@@ -64,8 +64,10 @@ class HttpExporter:
     # ------------------------------------------------------------------
 
     def _build_payload(self, report: dict[str, Any]) -> dict[str, Any]:
+        results = report.get("results", {})
+        environment = results.get("environment", {})
         metrics = []
-        for test in report.get("results", {}).get("tests", []):
+        for test in results.get("tests", []):
             metrics.append({
                 "test_nodeid": test.get("name"),
                 "test_name": test.get("name", "").split("::")[-1],
@@ -77,4 +79,4 @@ class HttpExporter:
                 "test_message": test.get("message"),
                 "test_allure_id": test.get("allureId"),
             })
-        return {"metrics": metrics}
+        return {"metrics": metrics, "environment": environment}

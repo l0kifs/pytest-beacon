@@ -38,5 +38,9 @@ dev = [
     "ty>=0.0.11",
 ]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::pytest.PytestCollectionWarning"]
+
 [tool.uv]
 package = true

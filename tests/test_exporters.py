@@ -168,6 +168,22 @@ class TestHttpExporterPayload:
         payload = mock_post.call_args[1]["json"]
         assert "metrics" in payload
         assert isinstance(payload["metrics"], list)
+        assert "environment" in payload
+
+    def test_environment_included_in_payload(self):
+        exp = HttpExporter("http://example.com/api")
+        with patch("httpx.post", return_value=_mock_response()) as mock_post:
+            exp.export(_SAMPLE_REPORT)
+        env = mock_post.call_args[1]["json"]["environment"]
+        assert env["pythonVersion"] == "3.12.0"
+        assert env["pytestVersion"] == "9.0.0"
+
+    def test_environment_empty_when_not_in_report(self):
+        report = {"results": {"summary": {}, "tests": []}}
+        exp = HttpExporter("http://example.com/api")
+        with patch("httpx.post", return_value=_mock_response()) as mock_post:
+            exp.export(report)
+        assert mock_post.call_args[1]["json"]["environment"] == {}
 
     def test_metric_fields(self):
         exp = HttpExporter("http://example.com/api")

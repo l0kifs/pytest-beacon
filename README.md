@@ -126,7 +126,14 @@ When `--beacon-url` is set, a POST request with a JSON body is sent to the speci
       "test_message": "AssertionError: expected 200, got 401",
       "test_allure_id": "TC-42"
     }
-  ]
+  ],
+  "environment": {
+    "pythonVersion": "3.12.0",
+    "pytestVersion": "9.0.0",
+    "xdistWorkers": 4,
+    "build": "123",
+    "branch": "main"
+  }
 }
 ```
 
