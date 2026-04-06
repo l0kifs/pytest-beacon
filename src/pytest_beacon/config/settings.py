@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     Configuration settings.
     """
     model_config = SettingsConfigDict(
-        env_prefix="PYTHON_PROJECT_TEMPLATE__",
+        env_prefix="PYTEST_BEACON__",
         env_nested_delimiter="__",
         env_file=".env",
         env_file_encoding="utf-8",
@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     )
 
     # Application settings
-    app_name: str = Field(default="python-project-template", description="Application name")
+    app_name: str = Field(default="pytest-beacon", description="Application name")
     app_version: str = Field(default="0.1.0", description="Application version")
 
 

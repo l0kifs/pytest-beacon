@@ -7,9 +7,9 @@ This project uses [UV](https://docs.astral.sh/uv/) as the package manager and Gi
 1. **PyPI Account**: Create an account at [https://pypi.org/](https://pypi.org/)
 2. **Trusted Publishing**: Configure trusted publishing (no API tokens needed!) at [https://pypi.org/manage/account/publishing/](https://pypi.org/manage/account/publishing/)
    - Add a new publisher with:
-     - PyPI Project Name: `python-project-template`
+     - PyPI Project Name: `pytest-beacon`
      - Owner: `l0kifs`
-     - Repository name: `python-project-template`
+     - Repository name: `pytest-beacon`
      - Workflow name: `publish-to-pypi.yml`
      - Environment name: (leave blank)
 
@@ -27,7 +27,7 @@ gh release list --limit 10 2>&1 | cat
    version = "0.2.0"  # Update to your new version
    ```
 
-2. **Update version** in `src/python_project_template/settings.py`:
+2. **Update version** in `src/pytest_beacon/settings.py`:
    ```python
    app_version: str = Field(default="0.2.0", description="Application version")
   # Update to your new version
@@ -60,11 +60,11 @@ gh release list --limit 10 2>&1 | cat
    - Doc updates
    
    ## 🔗 Full Changelog
-   See [CHANGELOG.md](https://github.com/l0kifs/python-project-template/blob/v0.2.0/CHANGELOG.md)"
+   See [CHANGELOG.md](https://github.com/l0kifs/pytest-beacon/blob/v0.2.0/CHANGELOG.md)"
    ```
    
    Or using GitHub web interface:
-   - Go to [https://github.com/l0kifs/python-project-template/releases/new](https://github.com/l0kifs/python-project-template/releases/new)
+   - Go to [https://github.com/l0kifs/pytest-beacon/releases/new](https://github.com/l0kifs/pytest-beacon/releases/new)
    - Create a new tag (e.g., `v0.2.0`)
    - Add release title and description
    - Click "Publish release"
@@ -117,7 +117,7 @@ Before publishing to the main PyPI, you can test on TestPyPI:
 
 3. Test installation:
    ```bash
-   pip install --index-url https://test.pypi.org/simple/ python-project-template
+   pip install --index-url https://test.pypi.org/simple/ pytest-beacon
    ```
 
 ## Best Practices

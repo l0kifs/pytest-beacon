@@ -7,7 +7,7 @@
 
 ## 🎯 Core Rules
 
-1. **Domain = Business Logic** (pure Python, no frameworks, Pydantic allowed for validation, Loguru for logging)
+1. **Domain = Business Logic** (pure Python, no frameworks, Pydantic allowed for validation, structlog for logging)
 2. **Infrastructure = Technical Details** (database, external APIs, file system)
 3. **Entry Points = Interface Layer** (CLI, HTTP API, workers, etc.)
 4. **Dependencies point inward:** Entry Points → Infrastructure → Domain
@@ -69,9 +69,9 @@ src/<package_name>/
 
 **Rules:**
 - ✅ Business logic only
-- ✅ Pure Python (no framework imports, Pydantic and Loguru allowed)
+- ✅ Pure Python (no framework imports, Pydantic and structlog allowed)
 - ✅ Can use Pydantic models for data validation
-- ✅ Can use Loguru for logging
+- ✅ Can use structlog for logging
 - ❌ No `infrastructure/` or `entry_points/` imports
 - ❌ No framework-specific imports (FastAPI, SQLAlchemy, etc.)
 
@@ -80,7 +80,9 @@ src/<package_name>/
 # domains/tasks/models.py
 from pydantic import BaseModel, field_validator
 from uuid import UUID
-from loguru import logger
+import structlog
+
+logger = structlog.get_logger()
 
 class Task(BaseModel):
     """Domain entity with business logic."""
@@ -100,16 +102,18 @@ class Task(BaseModel):
     def complete(self) -> None:
         """Business rule: only active tasks can be completed."""
         if self.status != "ACTIVE":
-            logger.warning(f"Cannot complete task {self.id}: invalid status {self.status}")
+            logger.warning("Cannot complete task: invalid status", task_id=self.id, status=self.status)
             raise InvalidStatusError()
-        logger.info(f"Task {self.id} completed")
+        logger.info("Task completed", task_id=self.id)
         self.status = "COMPLETED"
     
     class Config:
         frozen = True  # Immutable entity
 
 # domains/tasks/services.py
-from loguru import logger
+import structlog
+
+logger = structlog.get_logger()
 
 class TaskService:
     def __init__(self, repository):
@@ -118,7 +122,7 @@ class TaskService:
     def create_task(self, description: str) -> Task:
         task = Task(id=uuid4(), status="PENDING", description=description)
         self._repository.save(task)
-        logger.info(f"Created task {task.id}")
+        logger.info("Created task", task_id=task.id)
         return task
 ```
 
@@ -128,7 +132,7 @@ class TaskService:
 - Serialization/deserialization
 - Immutability with `frozen=True`
 
-**Note:** Loguru for logging is useful for:
+**Note:** structlog for logging is useful for:
 - Tracking business operations and decisions
 - Debugging domain logic
 - Auditing important business events
@@ -286,8 +290,10 @@ from sqlalchemy import Column  # Infrastructure import!
 class Task:
     id = Column(UUID)
 
-# GOOD: Pure Python or Pydantic (Loguru is also OK)
-from loguru import logger
+# GOOD: Pure Python or Pydantic (structlog is also OK)
+import structlog
+
+logger = structlog.get_logger()
 
 class Task(BaseModel):  # Pydantic is OK
     id: UUID
@@ -295,7 +301,7 @@ class Task(BaseModel):  # Pydantic is OK
     
     def complete(self):
         # Business logic here with logging
-        logger.info(f"Completing task {self.id}")
+        logger.info("Completing task", task_id=self.id)
         pass
 ```
 
@@ -357,7 +363,7 @@ entry_points/workers/               # Background workers (if async jobs)
 
 **Import Rules:**
 - Config: NO imports from infrastructure or entry_points
-- Domain: Standard library + Pydantic (for validation) + Loguru (for logging)
+- Domain: Standard library + Pydantic (for validation) + structlog (for logging)
 - Infrastructure: Can import Domain
 - Entry Points: Can import Domain and Infrastructure
 

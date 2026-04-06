@@ -3,7 +3,7 @@ requires = ["uv_build>=0.9.30"]
 build-backend = "uv_build"
 
 [project]
-name = "python-project-template"
+name = "pytest-beacon"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
