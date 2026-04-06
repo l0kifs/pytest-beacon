@@ -1,0 +1,31 @@
+[build-system]
+requires = ["uv_build>=0.9.30"]
+build-backend = "uv_build"
+
+[project]
+name = "python-project-template"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+dependencies = [
+    # Configuration and logging
+    "pydantic-settings>=2.0.0",
+    "structlog>=25.1.0",
+
+    # Data validation
+    "pydantic>=2.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.0",
+    "pytest-xdist>=3.0.0",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.14.5",
+    "ty>=0.0.11",
+]
+
+[tool.uv]
+package = true
