@@ -68,19 +68,39 @@ class TestRun:
         raw_tests: list[dict[str, Any]],
         excluded_statuses: set[str],
         seen_collection_errors: set[str],
+        worker_summary: dict[str, Any] | None = None,
     ) -> None:
         """Merge serialised test dicts from an xdist worker into this run."""
+        if worker_summary:
+            self._summary["tests"] += int(worker_summary.get("tests", 0) or 0)
+            self._summary["passed"] += int(worker_summary.get("passed", 0) or 0)
+            self._summary["failed"] += int(worker_summary.get("failed", 0) or 0)
+            self._summary["pending"] += int(worker_summary.get("pending", 0) or 0)
+            self._summary["skipped"] += int(worker_summary.get("skipped", 0) or 0)
+            self._summary["error"] += int(worker_summary.get("error", 0) or 0)
+            self._summary["other"] += int(worker_summary.get("other", 0) or 0)
+
         for raw in raw_tests:
             status_str = raw.get("status", "other")
-            # Always update summary
             try:
                 status = TestStatus(status_str)
             except ValueError:
                 status = TestStatus.OTHER
-            self._update_summary(status)
 
-            # Deduplicate collection errors by file path
-            if status == TestStatus.ERROR:
+            # Backward compatibility: when worker summary is not provided,
+            # reconstruct counters from individual test results.
+            if worker_summary is None:
+                self._update_summary(status)
+
+            # Deduplicate only collection errors by file path.
+            # Runtime/setup errors from the same file must remain separate entries.
+            line = raw.get("line")
+            is_collection_error = (
+                status == TestStatus.ERROR
+                and bool(raw.get("file_path"))
+                and line is None
+            )
+            if is_collection_error:
                 file_path = raw.get("file_path")
                 if file_path:
                     if file_path in seen_collection_errors:

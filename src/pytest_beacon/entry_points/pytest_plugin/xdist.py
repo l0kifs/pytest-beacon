@@ -22,28 +22,38 @@ def is_worker(session) -> bool:
         return hasattr(session.config, "workerinput")
 
 
-def send_to_master(config, tests: list[dict[str, Any]]) -> None:
-    """Serialise collected test dicts into workeroutput for the master to read."""
+def send_to_master(
+    config,
+    tests: list[dict[str, Any]],
+    summary: dict[str, Any] | None = None,
+) -> None:
+    """Serialise collected data into workeroutput for the master to read."""
     try:
         if hasattr(config, "workeroutput"):
-            config.workeroutput[_WORKER_OUTPUT_KEY] = {"tests": tests}
+            config.workeroutput[_WORKER_OUTPUT_KEY] = {
+                "tests": tests,
+                "summary": summary or {},
+            }
     except Exception:
         log.exception("beacon.xdist: failed to send results to master")
 
 
-def collect_from_worker(node) -> list[dict[str, Any]]:
-    """Read and return test dicts from a finished worker node."""
+def collect_from_worker(node) -> dict[str, Any]:
+    """Read and return payload from a finished worker node."""
     try:
         if hasattr(node, "workeroutput") and _WORKER_OUTPUT_KEY in node.workeroutput:
             data = node.workeroutput[_WORKER_OUTPUT_KEY]
             if isinstance(data, dict):
-                return data.get("tests", [])
+                return {
+                    "tests": data.get("tests", []) or [],
+                    "summary": data.get("summary", {}) or {},
+                }
     except Exception:
         log.exception(
             "beacon.xdist: failed to collect worker results",
             worker=getattr(node, "workerid", "unknown"),
         )
-    return []
+    return {"tests": [], "summary": {}}
 
 
 def get_worker_count(config) -> int | None:

@@ -492,6 +492,81 @@ class TestXdist:
         assert s["passed"] == 2
         assert s["failed"] == 1
 
+    def test_xdist_default_exclusion_keeps_passed_in_summary(self, pytester):
+        """Even when passed tests are excluded from payload, xdist summary must keep passed counts."""
+        pytester.makepyfile("""
+            import pytest
+
+            @pytest.mark.parametrize("n", list(range(6)))
+            def test_only_passes(n):
+                assert n >= 0
+        """)
+        result = pytester.runpytest("--beacon", "-n", "2")
+        result.assert_outcomes(passed=6)
+
+        data = _load_json_report(pytester)
+        summary = _results(data)["summary"]
+
+        assert summary["passed"] == 6
+        assert summary["tests"] == 6
+        assert _results(data)["tests"] == []
+
+    def test_xdist_runtime_errors_not_deduplicated_by_file(self, pytester):
+        """Runtime/setup errors from the same file should be preserved as separate test entries."""
+        pytester.makepyfile("""
+            import pytest
+
+            @pytest.fixture
+            def broken():
+                raise RuntimeError("fixture boom")
+
+            def test_error_a(broken):
+                pass
+
+            def test_error_b(broken):
+                pass
+        """)
+        result = pytester.runpytest("--beacon", "--beacon-exclude-status=", "-n", "2")
+        result.assert_outcomes(errors=2)
+
+        data = _load_json_report(pytester)
+        summary = _results(data)["summary"]
+        errors = [t for t in _results(data)["tests"] if t["status"] == "error"]
+
+        assert summary["error"] == 2
+        assert summary["tests"] == 2
+        assert len(errors) == 2
+
+
+class TestHookwrapperFailures:
+    def test_teardown_exception_in_other_plugin_does_not_drop_outcome(self, pytester):
+        """If another hookwrapper crashes, beacon should still keep already executed outcomes."""
+        pytester.makeconftest("""
+            import pytest
+
+            @pytest.hookimpl(hookwrapper=True)
+            def pytest_runtest_makereport(item, call):
+                outcome = yield
+                report = outcome.get_result()
+                if report.when == "call" and item.name == "test_broken_hook_target":
+                    raise RuntimeError("synthetic teardown failure")
+        """)
+        pytester.makepyfile("""
+            def test_broken_hook_target():
+                assert False, "first failure"
+
+            def test_regular_failure():
+                assert False, "second failure"
+        """)
+
+        result = pytester.runpytest("--beacon", "--beacon-exclude-status=")
+        assert result.ret == 3  # internal error from the synthetic crashing plugin
+        data = _load_json_report(pytester)
+        summary = _results(data)["summary"]
+
+        assert summary["failed"] == 1
+        assert summary["tests"] == 1
+
 
 # ---------------------------------------------------------------------------
 # HTTP URL export

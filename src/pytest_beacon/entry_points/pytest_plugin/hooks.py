@@ -112,8 +112,12 @@ class BeaconPlugin:
     def pytest_runtest_makereport(
         self, item: pytest.Item, call: pytest.CallInfo
     ) -> Any:
-        outcome = yield
-        report: pytest.TestReport = outcome.get_result()
+        try:
+            outcome = yield
+            report: pytest.TestReport = outcome.get_result()
+        except Exception as exc:
+            self._record_fallback_from_call(item, call, exc)
+            return
 
         try:
             should_process = report.when == "call" or (
@@ -187,10 +191,15 @@ class BeaconPlugin:
     def pytest_testnodedown(self, node: Any, error: Any) -> None:
         """Merge results from a finished xdist worker."""
         try:
-            raw_tests = _xdist.collect_from_worker(node)
-            if raw_tests:
+            payload = _xdist.collect_from_worker(node)
+            raw_tests = payload.get("tests", [])
+            summary = payload.get("summary", {})
+            if raw_tests or summary:
                 self._run.merge_worker_results(
-                    raw_tests, self._excluded, self._processed_collection_errors
+                    raw_tests,
+                    self._excluded,
+                    self._processed_collection_errors,
+                    worker_summary=summary,
                 )
         except Exception:
             log.exception(
@@ -205,6 +214,7 @@ class BeaconPlugin:
                 _xdist.send_to_master(
                     self._config,
                     [r.model_dump(mode="json") for r in self._run.tests],
+                    self._run.summary,
                 )
                 return
 
@@ -241,6 +251,61 @@ class BeaconPlugin:
 
         except Exception:
             log.exception("beacon: error in pytest_sessionfinish")
+
+    def _record_fallback_from_call(
+        self,
+        item: pytest.Item,
+        call: pytest.CallInfo,
+        exc: Exception,
+    ) -> None:
+        """Best-effort reporting when makereport hookwrapper teardown raises."""
+        try:
+            should_process = call.when == "call" or (
+                call.when == "setup" and bool(getattr(call, "excinfo", None))
+            )
+            is_new = call.when == "call" or item.nodeid not in self._processed_tests
+            if not (should_process and is_new):
+                return
+
+            self._processed_tests.add(item.nodeid)
+            status = _map_call_to_status(call)
+            duration_ms = round((getattr(call, "duration", 0.0) or 0.0) * 1000, 3)
+
+            result = TestResult(
+                nodeid=item.nodeid,
+                name=item.name,
+                status=status,
+                duration_ms=duration_ms,
+                start_time=datetime.now(timezone.utc),
+                file_path=item.location[0] if hasattr(item, "location") else None,
+                line=item.location[1] if hasattr(item, "location") else None,
+                marks=_extract_marks(item),
+                params=_extract_params(item),
+                allure_id=_extract_allure_id(item),
+            )
+
+            excinfo = getattr(call, "excinfo", None)
+            if excinfo and status in (TestStatus.FAILED, TestStatus.ERROR):
+                result.message = str(excinfo.value)[:500] if excinfo.value else str(exc)
+                result.trace = _truncate_traceback(str(excinfo.traceback))
+                result.failure_location = _failure_location(excinfo)
+            elif status == TestStatus.SKIPPED:
+                result.message = "Test was skipped"
+
+            self._run.update_summary_only(status)
+            if status.value not in self._excluded:
+                self._run._tests.append(result)
+
+            log.exception(
+                "beacon: recovered from makereport hookwrapper exception",
+                nodeid=getattr(item, "nodeid", "?"),
+                when=getattr(call, "when", "?"),
+            )
+        except Exception:
+            log.exception(
+                "beacon: failed to record fallback result",
+                nodeid=getattr(item, "nodeid", "?"),
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -282,6 +347,16 @@ def _map_outcome(report: pytest.TestReport) -> TestStatus:
         "error": TestStatus.ERROR,
     }
     return mapping.get(report.outcome, TestStatus.OTHER)
+
+
+def _map_call_to_status(call: pytest.CallInfo) -> TestStatus:
+    if call.when == "setup":
+        return TestStatus.ERROR if getattr(call, "excinfo", None) else TestStatus.OTHER
+    if call.when == "call":
+        return TestStatus.FAILED if getattr(call, "excinfo", None) else TestStatus.PASSED
+    if call.when == "teardown":
+        return TestStatus.FAILED if getattr(call, "excinfo", None) else TestStatus.OTHER
+    return TestStatus.OTHER
 
 
 def _extract_error_message(report: Any, excinfo: Any) -> str:

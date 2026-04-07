@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "pytest-beacon"
-version = "0.1.0"
+version = "0.1.1"
 description = "Highly customizable pytest reporting plugin combining AI-optimized CTRF reports and rich test metrics"
 readme = { file = "README.md", content-type = "text/markdown" }
 license = { file = "LICENSE" }
