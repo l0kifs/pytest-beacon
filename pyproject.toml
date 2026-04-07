@@ -6,9 +6,33 @@ build-backend = "uv_build"
 name = "pytest-beacon"
 version = "0.1.0"
 description = "Highly customizable pytest reporting plugin combining AI-optimized CTRF reports and rich test metrics"
-readme = "README.md"
+readme = { file = "README.md", content-type = "text/markdown" }
 license = { file = "LICENSE" }
 requires-python = ">=3.11"
+authors = [
+    { name = "Sergei Konovalov", email = "l0kifs91@gmail.com" },
+]
+keywords = [
+    "ctrf",
+    "metrics",
+    "observability",
+    "plugin",
+    "pytest",
+    "reporting",
+    "testing",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: Pytest",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Testing",
+]
 dependencies = [
     # Configuration and logging
     "pydantic-settings>=2.0.0",
@@ -25,6 +49,12 @@ dependencies = [
     # Report serialization
     "pyyaml>=6.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/l0kifs/pytest-beacon"
+Documentation = "https://github.com/l0kifs/pytest-beacon#readme"
+Repository = "https://github.com/l0kifs/pytest-beacon"
+Issues = "https://github.com/l0kifs/pytest-beacon/issues"
 
 [project.entry-points.pytest11]
 beacon = "pytest_beacon.entry_points.pytest_plugin.hooks"
