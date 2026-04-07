@@ -5,14 +5,13 @@ Entry point registered in pyproject.toml as:
     [project.entry-points.pytest11]
     beacon = "pytest_beacon.entry_points.pytest_plugin.hooks"
 """
+
 from __future__ import annotations
 
-import sys
 from datetime import datetime, timezone
 from typing import Any
 
 import pytest
-import structlog
 
 from pytest_beacon.config.settings import get_settings
 from pytest_beacon.domains.test_run.entities import TestResult, TestRun
@@ -22,8 +21,9 @@ from pytest_beacon.entry_points.pytest_plugin import xdist as _xdist
 from pytest_beacon.infrastructure.exporters.file_exporter import FileExporter
 from pytest_beacon.infrastructure.exporters.http_exporter import HttpExporter
 from pytest_beacon.infrastructure.formatters.ctrf import build_ctrf_report
+from pytest_beacon.infrastructure.observability.logging import get_logger
 
-log = structlog.get_logger(__name__)
+log = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -42,11 +42,21 @@ class BeaconPlugin:
         self._processed_collection_errors: set[str] = set()
 
         # CLI options override settings
-        self._fmt: str = config.getoption("--beacon-format", default=self._settings.report_format)
-        self._verbose: bool = config.getoption("--beacon-verbose", default=self._settings.verbose)
-        exclude_raw: str = config.getoption("--beacon-exclude-status", default=self._settings.exclude_statuses)
-        self._excluded: set[str] = {s.strip() for s in exclude_raw.split(",") if s.strip()}
-        self._meta: dict[str, str] = _parse_meta(config.getoption("--beacon-meta", default=[]))
+        self._fmt: str = config.getoption(
+            "--beacon-format", default=self._settings.report_format
+        )
+        self._verbose: bool = config.getoption(
+            "--beacon-verbose", default=self._settings.verbose
+        )
+        exclude_raw: str = config.getoption(
+            "--beacon-exclude-status", default=self._settings.exclude_statuses
+        )
+        self._excluded: set[str] = {
+            s.strip() for s in exclude_raw.split(",") if s.strip()
+        }
+        self._meta: dict[str, str] = _parse_meta(
+            config.getoption("--beacon-meta", default=[])
+        )
 
         log.debug(
             "beacon: plugin initialised",
@@ -81,25 +91,34 @@ class BeaconPlugin:
                 status=TestStatus.ERROR,
                 duration_ms=0.0,
                 file_path=file_path,
-                message=_extract_error_message(report, getattr(report, "excinfo", None)),
-                trace=_truncate_traceback(str(report.longrepr)) if getattr(report, "longrepr", None) else None,
+                message=_extract_error_message(
+                    report, getattr(report, "excinfo", None)
+                ),
+                trace=_truncate_traceback(str(report.longrepr))
+                if getattr(report, "longrepr", None)
+                else None,
                 failure_location=_failure_location(getattr(report, "excinfo", None)),
             )
             self._run.update_summary_only(TestStatus.ERROR)
             if TestStatus.ERROR.value not in self._excluded:
                 self._run._tests.append(result)
         except Exception:
-            log.exception("beacon: error in pytest_collectreport", nodeid=getattr(report, "nodeid", "?"))
+            log.exception(
+                "beacon: error in pytest_collectreport",
+                nodeid=getattr(report, "nodeid", "?"),
+            )
 
     @pytest.hookimpl(hookwrapper=True)
-    def pytest_runtest_makereport(self, item: pytest.Item, call: pytest.CallInfo) -> Any:
+    def pytest_runtest_makereport(
+        self, item: pytest.Item, call: pytest.CallInfo
+    ) -> Any:
         outcome = yield
         report: pytest.TestReport = outcome.get_result()
 
         try:
-            should_process = (
-                report.when == "call"
-                or (report.when == "setup" and report.outcome in ("skipped", "failed", "error"))
+            should_process = report.when == "call" or (
+                report.when == "setup"
+                and report.outcome in ("skipped", "failed", "error")
             )
             is_new = report.when == "call" or item.nodeid not in self._processed_tests
 
@@ -114,7 +133,9 @@ class BeaconPlugin:
             # Duration
             duration_ms = 0.0
             if report.when == "call":
-                dur = getattr(report, "duration", None) or getattr(call, "duration", None)
+                dur = getattr(report, "duration", None) or getattr(
+                    call, "duration", None
+                )
                 if dur is not None:
                     duration_ms = round(dur * 1000, 3)
 
@@ -133,7 +154,11 @@ class BeaconPlugin:
 
             if status in (TestStatus.FAILED, TestStatus.ERROR):
                 result.message = _extract_error_message(report, excinfo)
-                result.trace = _truncate_traceback(str(report.longrepr)) if getattr(report, "longrepr", None) else None
+                result.trace = (
+                    _truncate_traceback(str(report.longrepr))
+                    if getattr(report, "longrepr", None)
+                    else None
+                )
                 result.failure_location = _failure_location(excinfo)
                 if excinfo and hasattr(excinfo, "typename"):
                     # Store exception type in message prefix for context
@@ -142,24 +167,36 @@ class BeaconPlugin:
             elif status == TestStatus.SKIPPED:
                 result.message = _extract_skip_reason(report)
             elif status == TestStatus.PASSED and self._verbose:
-                result.stdout = (getattr(report, "capstdout", None) or "")[:1000] or None
-                result.stderr = (getattr(report, "capstderr", None) or "")[:1000] or None
+                result.stdout = (getattr(report, "capstdout", None) or "")[
+                    :1000
+                ] or None
+                result.stderr = (getattr(report, "capstderr", None) or "")[
+                    :1000
+                ] or None
 
             self._run.update_summary_only(status)
             if status.value not in self._excluded:
                 self._run._tests.append(result)
 
         except Exception:
-            log.exception("beacon: error in pytest_runtest_makereport", nodeid=getattr(item, "nodeid", "?"))
+            log.exception(
+                "beacon: error in pytest_runtest_makereport",
+                nodeid=getattr(item, "nodeid", "?"),
+            )
 
     def pytest_testnodedown(self, node: Any, error: Any) -> None:
         """Merge results from a finished xdist worker."""
         try:
             raw_tests = _xdist.collect_from_worker(node)
             if raw_tests:
-                self._run.merge_worker_results(raw_tests, self._excluded, self._processed_collection_errors)
+                self._run.merge_worker_results(
+                    raw_tests, self._excluded, self._processed_collection_errors
+                )
         except Exception:
-            log.exception("beacon: error in pytest_testnodedown", worker=getattr(node, "workerid", "?"))
+            log.exception(
+                "beacon: error in pytest_testnodedown",
+                worker=getattr(node, "workerid", "?"),
+            )
 
     def pytest_sessionfinish(self, session: pytest.Session) -> None:
         """Finalise the run and export the report."""
@@ -179,12 +216,22 @@ class BeaconPlugin:
                 extra_meta=self._meta or None,
             )
 
-            file_path = self._config.getoption("--beacon-file", default=self._settings.report_file)
-            url = self._config.getoption("--beacon-url", default=self._settings.report_url)
+            file_path = self._config.getoption(
+                "--beacon-file", default=self._settings.report_file
+            )
+            url = self._config.getoption(
+                "--beacon-url", default=self._settings.report_url
+            )
 
             exporters = []
             if url:
-                exporters.append(HttpExporter(url, self._settings.http_timeout, self._settings.http_max_retries))
+                exporters.append(
+                    HttpExporter(
+                        url,
+                        self._settings.http_timeout,
+                        self._settings.http_max_retries,
+                    )
+                )
             if not url or file_path:
                 # Always write a local file unless only a URL is configured and no explicit file
                 exporters.append(FileExporter(file_path, self._fmt))
@@ -239,7 +286,9 @@ def _map_outcome(report: pytest.TestReport) -> TestStatus:
 
 def _extract_error_message(report: Any, excinfo: Any) -> str:
     if excinfo and hasattr(excinfo, "value") and excinfo.value:
-        if excinfo.typename == "AssertionError" and getattr(excinfo.value, "args", None):
+        if excinfo.typename == "AssertionError" and getattr(
+            excinfo.value, "args", None
+        ):
             return str(excinfo.value.args[0])[:500]
         return str(excinfo.value)[:500]
 

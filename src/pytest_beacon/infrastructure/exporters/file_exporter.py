@@ -1,15 +1,17 @@
 """
 File exporter: writes CTRF report to a JSON or YAML file.
 """
+
 import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import structlog
 import yaml
 
-log = structlog.get_logger(__name__)
+from pytest_beacon.infrastructure.observability.logging import get_logger
+
+log = get_logger(__name__)
 
 _DEFAULT_DIR = "beacon_reports"
 
@@ -30,17 +32,29 @@ class FileExporter:
         try:
             self._output_path.parent.mkdir(parents=True, exist_ok=True)
         except Exception:
-            log.exception("beacon.file_exporter: failed to create output directory", path=str(self._output_path))
+            log.exception(
+                "beacon.file_exporter: failed to create output directory",
+                path=str(self._output_path),
+            )
             return
 
         try:
             with self._output_path.open("w", encoding="utf-8") as fh:
                 if self._fmt == "yaml":
-                    yaml.dump(report, fh, default_flow_style=False, allow_unicode=True, sort_keys=False)
+                    yaml.dump(
+                        report,
+                        fh,
+                        default_flow_style=False,
+                        allow_unicode=True,
+                        sort_keys=False,
+                    )
                 else:
                     json.dump(report, fh, indent=2, ensure_ascii=False)
         except Exception:
-            log.exception("beacon.file_exporter: failed to write report", path=str(self._output_path))
+            log.exception(
+                "beacon.file_exporter: failed to write report",
+                path=str(self._output_path),
+            )
             return
 
         self._print_summary(report)

@@ -3,12 +3,14 @@ HTTP exporter: POSTs the CTRF report to a user-specified URL.
 
 Body: {"metrics": [...]}
 """
+
 from typing import Any
 
 import httpx
-import structlog
 
-log = structlog.get_logger(__name__)
+from pytest_beacon.infrastructure.observability.logging import get_logger
+
+log = get_logger(__name__)
 
 
 class HttpExporter:
@@ -44,7 +46,9 @@ class HttpExporter:
                 )
                 return
             except httpx.TimeoutException:
-                log.warning("beacon.http_exporter: request timed out", url=url, attempt=attempt)
+                log.warning(
+                    "beacon.http_exporter: request timed out", url=url, attempt=attempt
+                )
             except httpx.HTTPStatusError as exc:
                 log.error(
                     "beacon.http_exporter: HTTP error",
@@ -55,9 +59,15 @@ class HttpExporter:
                 )
                 return  # 4xx/5xx — no point retrying
             except Exception:
-                log.exception("beacon.http_exporter: unexpected error", url=url, attempt=attempt)
+                log.exception(
+                    "beacon.http_exporter: unexpected error", url=url, attempt=attempt
+                )
 
-        log.error("beacon.http_exporter: all retries exhausted", url=url, max_retries=self._max_retries)
+        log.error(
+            "beacon.http_exporter: all retries exhausted",
+            url=url,
+            max_retries=self._max_retries,
+        )
 
     # ------------------------------------------------------------------
     # Helpers
@@ -68,15 +78,17 @@ class HttpExporter:
         environment = results.get("environment", {})
         metrics = []
         for test in results.get("tests", []):
-            metrics.append({
-                "test_nodeid": test.get("name"),
-                "test_name": test.get("name", "").split("::")[-1],
-                "test_result": test.get("status", "other"),
-                "test_duration": test.get("duration", 0) / 1000,  # ms → seconds
-                "test_marks": test.get("marks", []),
-                "test_params": test.get("params", {}),
-                "test_stacktrace": test.get("trace"),
-                "test_message": test.get("message"),
-                "test_allure_id": test.get("allureId"),
-            })
+            metrics.append(
+                {
+                    "test_nodeid": test.get("name"),
+                    "test_name": test.get("name", "").split("::")[-1],
+                    "test_result": test.get("status", "other"),
+                    "test_duration": test.get("duration", 0) / 1000,  # ms → seconds
+                    "test_marks": test.get("marks", []),
+                    "test_params": test.get("params", {}),
+                    "test_stacktrace": test.get("trace"),
+                    "test_message": test.get("message"),
+                    "test_allure_id": test.get("allureId"),
+                }
+            )
         return {"metrics": metrics, "environment": environment}

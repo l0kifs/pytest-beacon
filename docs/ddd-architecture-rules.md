@@ -7,7 +7,7 @@
 
 ## 🎯 Core Rules
 
-1. **Domain = Business Logic** (pure Python, no frameworks, Pydantic allowed for validation, structlog for logging)
+1. **Domain = Business Logic** (pure Python, no frameworks, Pydantic allowed for validation, standard library logging allowed)
 2. **Infrastructure = Technical Details** (database, external APIs, file system)
 3. **Entry Points = Interface Layer** (CLI, HTTP API, workers, etc.)
 4. **Dependencies point inward:** Entry Points → Infrastructure → Domain
@@ -32,6 +32,7 @@ src/<package_name>/
 │   │   ├── database.py        # DB engine, session, type decorators
 │   │   ├── models.py          # SQLAlchemy models (if using DB)
 │   │   └── repositories.py   # Repository implementations
+│   ├── observability/         # Logging adapters, tracing helpers, metrics emitters
 │   ├── clients/               # External API clients, URL providers
 │   └── storage/               # File system, cloud storage, etc.
 └── entry_points/              # Application entry points
@@ -69,9 +70,9 @@ src/<package_name>/
 
 **Rules:**
 - ✅ Business logic only
-- ✅ Pure Python (no framework imports, Pydantic and structlog allowed)
+- ✅ Pure Python (no framework imports, Pydantic and standard library logging allowed)
 - ✅ Can use Pydantic models for data validation
-- ✅ Can use structlog for logging
+- ✅ Can use standard library logging
 - ❌ No `infrastructure/` or `entry_points/` imports
 - ❌ No framework-specific imports (FastAPI, SQLAlchemy, etc.)
 
@@ -80,9 +81,9 @@ src/<package_name>/
 # domains/tasks/models.py
 from pydantic import BaseModel, field_validator
 from uuid import UUID
-import structlog
+import logging
 
-logger = structlog.get_logger()
+logger = logging.getLogger(__name__)
 
 class Task(BaseModel):
     """Domain entity with business logic."""
@@ -111,9 +112,9 @@ class Task(BaseModel):
         frozen = True  # Immutable entity
 
 # domains/tasks/services.py
-import structlog
+import logging
 
-logger = structlog.get_logger()
+logger = logging.getLogger(__name__)
 
 class TaskService:
     def __init__(self, repository):
@@ -132,7 +133,7 @@ class TaskService:
 - Serialization/deserialization
 - Immutability with `frozen=True`
 
-**Note:** structlog for logging is useful for:
+**Note:** standard library logging is useful for:
 - Tracking business operations and decisions
 - Debugging domain logic
 - Auditing important business events
@@ -147,6 +148,7 @@ Use regular Python classes if you don't need validation or prefer simpler approa
 - ✅ Repository implementations
 - ✅ External API clients, URL providers
 - ✅ File system operations
+- ✅ Observability helpers (logging adapters, tracing utilities, metrics emitters)
 - ✅ Any technical implementation details
 - ❌ No business logic
 
@@ -290,10 +292,10 @@ from sqlalchemy import Column  # Infrastructure import!
 class Task:
     id = Column(UUID)
 
-# GOOD: Pure Python or Pydantic (structlog is also OK)
-import structlog
+# GOOD: Pure Python or Pydantic (standard logging is also OK)
+import logging
 
-logger = structlog.get_logger()
+logger = logging.getLogger(__name__)
 
 class Task(BaseModel):  # Pydantic is OK
     id: UUID
@@ -344,13 +346,13 @@ class Task(BaseModel):
 **File Structure:**
 ```
 config/settings.py                  # Settings and configuration ONLY
-config/logging.py                   # Logging configuration
 domains/<domain>/models.py          # Entities with business logic
 domains/<domain>/services.py        # Application services
 domains/<domain>/exceptions.py      # Domain exceptions
 infrastructure/database/database.py # DB engine, session, types
 infrastructure/database/models.py   # Database models (if using DB)
 infrastructure/database/repositories.py  # Repositories
+infrastructure/observability/logging.py  # Logging adapters and observability helpers
 infrastructure/clients/             # API clients, URL providers
 entry_points/main.py                # Entry point, dependency wiring
 entry_points/cli/                   # CLI commands (if CLI app)
@@ -363,7 +365,7 @@ entry_points/workers/               # Background workers (if async jobs)
 
 **Import Rules:**
 - Config: NO imports from infrastructure or entry_points
-- Domain: Standard library + Pydantic (for validation) + structlog (for logging)
+- Domain: Standard library + Pydantic (for validation) + logging (for logging)
 - Infrastructure: Can import Domain
 - Entry Points: Can import Domain and Infrastructure
 
