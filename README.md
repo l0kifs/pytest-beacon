@@ -1,61 +1,83 @@
-# pytest-beacon
+<div align="center">
 
-Highly customizable pytest reporting plugin. Generates [CTRF](https://ctrf.io) 1.0.0 reports with rich test metadata — marks, parameters, Allure IDs, environment — and exports them to a local file and/or a remote HTTP service.
+![pytest-beacon](https://socialify.git.ci/l0kifs/pytest-beacon/image?description=0&font=Inter&language=1&name=1&owner=1&pattern=Signal&theme=Light)
 
-## Features
+# Pytest Beacon
 
-- CTRF 1.0.0 compliant JSON/YAML reports
-- Token-efficient by default (passed tests excluded from output, summary always accurate)
-- Rich metadata: marks, parametrized params, Allure IDs, environment name
-- HTTP export to a remote metrics service
-- Full `pytest-xdist` support (parallel execution)
-- Collection error tracking (import errors, syntax errors)
-- Configurable via CLI flags and environment variables
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+![GitHub last commit](https://img.shields.io/github/last-commit/l0kifs/pytest-beacon)
+![GitHub Release Date](https://img.shields.io/github/release-date/l0kifs/pytest-beacon?label=last%20release)
 
-## Installation
+</div>
 
-```bash
-pip install pytest-beacon
-```
+**Pytest Beacon** is a highly customizable pytest reporting plugin. Generates [CTRF](https://ctrf.io) 1.0.0 reports with rich test metadata — marks, parameters, Allure IDs, environment — and exports them to a local file and/or a remote HTTP service.
 
-Or with [uv](https://docs.astral.sh/uv/):
+### Why you might need this
+
+- You want machine-readable test results that CI/CD pipelines can consume
+- Your test suite is large and you need token-efficient reports (passed tests excluded by default)
+- You send test metrics to a remote service or dashboard for trend analysis
+- You run tests in parallel with `pytest-xdist` and need a unified report
+- You need collection errors (import errors, syntax errors) tracked alongside test results
+
+---
+
+## ✨ Features
+
+- **CTRF 1.0.0 compliance**: JSON/YAML reports following the Common Test Results Format standard
+- **Token-efficient by default**: Passed tests excluded from output; summary counters are always accurate
+- **Rich metadata**: Marks, parametrized params, Allure IDs, and environment name per test
+- **HTTP export**: POST reports to a remote metrics service after each run
+- **xdist support**: Full `pytest-xdist` compatibility for parallel execution
+- **Collection error tracking**: Import errors and syntax errors appear in the report
+- **Flexible configuration**: CLI flags, environment variables, and `.env` file support
+
+## 🚀 Installation
 
 ```bash
 uv add pytest-beacon
+# or
+pip install pytest-beacon
 ```
 
-## Usage
+## ⚡ Quick Start
 
+**1. Generate a local report**
+Writes to `beacon_reports/report-YYYYMMDD-HHMMSS.json` by default:
 ```bash
-# Basic — writes to beacon_reports/report-YYYYMMDD-HHMMSS.json
 pytest --beacon
+```
 
-# Custom output file
-pytest --beacon --beacon-file=results.json
+**2. Custom file and format**
+```bash
+pytest --beacon --beacon-file=results.json --beacon-format=yaml
+```
 
-# YAML format
-pytest --beacon --beacon-format=yaml
-
-# Send to remote service
+**3. Send to a remote service**
+```bash
 pytest --beacon --beacon-url=http://localhost:8000/api/v1/metrics
+```
 
-# Include all test statuses in report (default excludes passed)
-pytest --beacon --beacon-exclude-status=''
+**4. Include all statuses and captured output**
+```bash
+pytest --beacon --beacon-exclude-status='' --beacon-verbose
+```
 
-# Include stdout/stderr for passed tests
-pytest --beacon --beacon-verbose
-
-# Works with xdist
+**5. Parallel execution with xdist**
+```bash
 pytest --beacon -n auto
+```
 
-# Attach arbitrary metadata to the report
+**6. Attach arbitrary metadata**
+```bash
 pytest --beacon --beacon-meta build=123 --beacon-meta branch=main --beacon-meta triggered_by=ci
 ```
 
-## CLI Options
+## 🛠 CLI Options
 
 | Option | Default | Description |
-|--------|---------|-------------|
+| :--- | :--- | :--- |
 | `--beacon` | off | Enable reporting |
 | `--beacon-file PATH` | `beacon_reports/report-<ts>.json` | Output file. Bare filename → placed in `beacon_reports/` with timestamp. |
 | `--beacon-url URL` | — | Full URL to POST the report to. |
@@ -64,19 +86,22 @@ pytest --beacon --beacon-meta build=123 --beacon-meta branch=main --beacon-meta 
 | `--beacon-exclude-status STATUSES` | `passed` | Comma-separated statuses to omit from report output. Empty string includes all. |
 | `--beacon-meta KEY=VALUE` | — | Arbitrary metadata pair added to the report environment. Repeatable. |
 
-## Environment Variables
+### Environment Variables
 
-All variables use the `PYTEST_BEACON__` prefix.
+All variables use the `PYTEST_BEACON__` prefix. Can also be set in a `.env` file at the project root.
 
-| Variable | Description |
-|----------|-------------|
-| `PYTEST_BEACON__REPORT_FORMAT` | Default report format |
-| `PYTEST_BEACON__HTTP_TIMEOUT` | HTTP export timeout in seconds (default: `10.0`) |
-| `PYTEST_BEACON__HTTP_MAX_RETRIES` | HTTP export retry attempts (default: `3`) |
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `PYTEST_BEACON__REPORT_FORMAT` | `json` | Default report format |
+| `PYTEST_BEACON__HTTP_TIMEOUT` | `10.0` | HTTP export timeout in seconds |
+| `PYTEST_BEACON__HTTP_MAX_RETRIES` | `3` | HTTP export retry attempts |
 
-Variables can also be set in a `.env` file at the project root.
+## 📊 Report Format
 
-## Report Format
+Summary counters always reflect all tests regardless of `--beacon-exclude-status`.
+
+<details>
+<summary>📄 <b>Example CTRF JSON Report</b> (click to expand)</summary>
 
 ```json
 {
@@ -106,11 +131,14 @@ Variables can also be set in a `.env` file at the project root.
 }
 ```
 
-Summary counters always reflect all tests regardless of `--beacon-exclude-status`.
+</details>
 
-## Remote HTTP Export
+## 📤 Remote HTTP Export
 
-When `--beacon-url` is set, a POST request with a JSON body is sent to the specified URL:
+When `--beacon-url` is set, a POST request with a JSON body is sent to the specified URL after the run. Export errors are logged and never interrupt test execution.
+
+<details>
+<summary>📄 <b>Example HTTP Request Body</b> (click to expand)</summary>
 
 ```json
 {
@@ -137,29 +165,24 @@ When `--beacon-url` is set, a POST request with a JSON body is sent to the speci
 }
 ```
 
-Export errors are logged and never interrupt test execution.
+</details>
 
 ## Local Development
 
 **Install dependencies:**
-
 ```bash
 uv sync
 ```
 
 **Run tests:**
-
 ```bash
 uv run pytest tests/
 ```
 
 **Run a quick smoke test against your own test suite:**
-
 ```bash
 uv run pytest your_tests/ --beacon --beacon-exclude-status=
 ```
 
-## Requirements
-
-- Python 3.11+
-- pytest 9.0+
+## ⚖️ License
+MIT
