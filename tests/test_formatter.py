@@ -3,6 +3,7 @@ import sys
 
 import pytest as _pytest
 
+from pytest_beacon.config.settings import get_settings
 from pytest_beacon.domains.test_run.entities import TestResult, TestRun
 from pytest_beacon.domains.test_run.value_objects import TestStatus
 from pytest_beacon.infrastructure.formatters.ctrf import _format_test, build_ctrf_report
@@ -61,7 +62,7 @@ class TestReportStructure:
         report = build_ctrf_report(_run_with())
         extra = report["results"]["extra"]
         assert extra["pluginName"] == "pytest-beacon"
-        assert extra["pluginVersion"] == "0.1.0"
+        assert extra["pluginVersion"] == get_settings().app_version
         assert extra["ctrf"] == "1.0.0"
         assert "generatedAt" in extra
 

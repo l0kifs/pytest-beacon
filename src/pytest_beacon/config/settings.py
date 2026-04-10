@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     # Application settings
     app_name: str = Field(default="pytest-beacon", description="Application name")
-    app_version: str = Field(default="0.1.1", description="Application version")
+    app_version: str = Field(default="0.2.0", description="Application version")
 
     # Plugin activation (can also be set via env var as fallback)
     generate_report: bool = Field(default=False, description="Enable beacon reporting (overridden by --beacon CLI flag)")
@@ -29,9 +29,13 @@ class Settings(BaseSettings):
 
     # Content control
     verbose: bool = Field(default=False, description="Include stdout/stderr for passed tests (--beacon-verbose)")
-    exclude_statuses: str = Field(
+    file_exclude_statuses: str = Field(
         default="passed",
-        description="Comma-separated test statuses to exclude from report output (--beacon-exclude-status)",
+        description="Comma-separated test statuses to exclude from file report output (--beacon-file-exclude-status)",
+    )
+    http_exclude_statuses: str = Field(
+        default="passed",
+        description="Comma-separated test statuses to exclude from HTTP export (--beacon-http-exclude-status)",
     )
 
     # HTTP export settings

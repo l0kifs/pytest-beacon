@@ -27,6 +27,7 @@
 
 - **CTRF 1.0.0 compliance**: JSON/YAML reports following the Common Test Results Format standard
 - **Token-efficient by default**: Passed tests excluded from output; summary counters are always accurate
+- **Independent output filtering**: Separate exclude rules for local file and HTTP export
 - **Rich metadata**: Marks, parametrized params, Allure IDs, and environment name per test
 - **HTTP export**: POST reports to a remote metrics service after each run
 - **xdist support**: Full `pytest-xdist` compatibility for parallel execution
@@ -61,7 +62,12 @@ pytest --beacon --beacon-url=http://localhost:8000/api/v1/metrics
 
 **4. Include all statuses and captured output**
 ```bash
-pytest --beacon --beacon-exclude-status='' --beacon-verbose
+pytest --beacon --beacon-file-exclude-status='' --beacon-verbose
+```
+
+**7. Send all statuses to HTTP but keep local file lean**
+```bash
+pytest --beacon --beacon-url=http://localhost:8000/api/v1/metrics --beacon-http-exclude-status=''
 ```
 
 **5. Parallel execution with xdist**
@@ -83,7 +89,8 @@ pytest --beacon --beacon-meta build=123 --beacon-meta branch=main --beacon-meta 
 | `--beacon-url URL` | — | Full URL to POST the report to. |
 | `--beacon-format json\|yaml` | `json` | Report serialisation format |
 | `--beacon-verbose` | off | Include captured stdout/stderr for passed tests |
-| `--beacon-exclude-status STATUSES` | `passed` | Comma-separated statuses to omit from report output. Empty string includes all. |
+| `--beacon-file-exclude-status STATUSES` | `passed` | Comma-separated statuses to omit from the **local file** report. Empty string includes all. |
+| `--beacon-http-exclude-status STATUSES` | `passed` | Comma-separated statuses to omit from the **HTTP export**. Empty string includes all. |
 | `--beacon-meta KEY=VALUE` | — | Arbitrary metadata pair added to the report environment. Repeatable. |
 
 ### Environment Variables
@@ -93,12 +100,14 @@ All variables use the `PYTEST_BEACON__` prefix. Can also be set in a `.env` file
 | Variable | Default | Description |
 | :--- | :--- | :--- |
 | `PYTEST_BEACON__REPORT_FORMAT` | `json` | Default report format |
+| `PYTEST_BEACON__FILE_EXCLUDE_STATUSES` | `passed` | Statuses to omit from local file report |
+| `PYTEST_BEACON__HTTP_EXCLUDE_STATUSES` | `passed` | Statuses to omit from HTTP export |
 | `PYTEST_BEACON__HTTP_TIMEOUT` | `10.0` | HTTP export timeout in seconds |
 | `PYTEST_BEACON__HTTP_MAX_RETRIES` | `3` | HTTP export retry attempts |
 
 ## 📊 Report Format
 
-Summary counters always reflect all tests regardless of `--beacon-exclude-status`.
+Summary counters always reflect all tests regardless of `--beacon-file-exclude-status` or `--beacon-http-exclude-status`.
 
 <details>
 <summary>📄 <b>Example CTRF JSON Report</b> (click to expand)</summary>
@@ -126,7 +135,7 @@ Summary counters always reflect all tests regardless of `--beacon-exclude-status
       }
     ],
     "environment": { "pythonVersion": "3.12.0", "pytestVersion": "9.0.0", "xdistWorkers": 4, "build": "123", "branch": "main" },
-    "extra": { "pluginName": "pytest-beacon", "pluginVersion": "0.1.0", "ctrf": "1.0.0" }
+    "extra": { "pluginName": "pytest-beacon", "pluginVersion": "0.2.0", "ctrf": "1.0.0" }
   }
 }
 ```
@@ -181,7 +190,7 @@ uv run pytest tests/
 
 **Run a quick smoke test against your own test suite:**
 ```bash
-uv run pytest your_tests/ --beacon --beacon-exclude-status=
+uv run pytest your_tests/ --beacon --beacon-file-exclude-status=
 ```
 
 ## ⚖️ License

@@ -17,12 +17,15 @@ def build_ctrf_report(
     run: TestRun,
     *,
     plugin_name: str = "pytest-beacon",
-    plugin_version: str = "0.1.0",
+    plugin_version: str | None = None,
     excluded_statuses: set[str] | None = None,
     xdist_workers: int | None = None,
     extra_meta: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Return a CTRF 1.0.0 report dict from *run*."""
+    if plugin_version is None:
+        from pytest_beacon.config.settings import get_settings  # noqa: PLC0415
+        plugin_version = get_settings().app_version
     excluded_statuses = excluded_statuses or set()
 
     tests_section = []

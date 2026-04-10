@@ -49,11 +49,21 @@ class BeaconPlugin:
             "--beacon-verbose", default=self._settings.verbose
         )
         exclude_raw: str = config.getoption(
-            "--beacon-exclude-status", default=self._settings.exclude_statuses
+            "--beacon-file-exclude-status", default=self._settings.file_exclude_statuses
         )
-        self._excluded: set[str] = {
+        self._file_excluded: set[str] = {
             s.strip() for s in exclude_raw.split(",") if s.strip()
         }
+        http_exclude_raw: str | None = config.getoption(
+            "--beacon-http-exclude-status", default=None
+        )
+        if http_exclude_raw is None:
+            http_exclude_raw = self._settings.http_exclude_statuses
+        self._http_excluded: set[str] = {
+            s.strip() for s in http_exclude_raw.split(",") if s.strip()
+        }
+        # Only skip storing a test result if excluded from BOTH outputs
+        self._storage_excluded: set[str] = self._file_excluded & self._http_excluded
         self._meta: dict[str, str] = _parse_meta(
             config.getoption("--beacon-meta", default=[])
         )
@@ -62,7 +72,8 @@ class BeaconPlugin:
             "beacon: plugin initialised",
             fmt=self._fmt,
             verbose=self._verbose,
-            excluded=list(self._excluded),
+            file_excluded=list(self._file_excluded),
+            http_excluded=list(self._http_excluded),
             meta=self._meta,
         )
 
@@ -100,7 +111,7 @@ class BeaconPlugin:
                 failure_location=_failure_location(getattr(report, "excinfo", None)),
             )
             self._run.update_summary_only(TestStatus.ERROR)
-            if TestStatus.ERROR.value not in self._excluded:
+            if TestStatus.ERROR.value not in self._storage_excluded:
                 self._run._tests.append(result)
         except Exception:
             log.exception(
@@ -179,7 +190,7 @@ class BeaconPlugin:
                 ] or None
 
             self._run.update_summary_only(status)
-            if status.value not in self._excluded:
+            if status.value not in self._storage_excluded:
                 self._run._tests.append(result)
 
         except Exception:
@@ -197,7 +208,7 @@ class BeaconPlugin:
             if raw_tests or summary:
                 self._run.merge_worker_results(
                     raw_tests,
-                    self._excluded,
+                    self._storage_excluded,
                     self._processed_collection_errors,
                     worker_summary=summary,
                 )
@@ -219,35 +230,38 @@ class BeaconPlugin:
                 return
 
             self._run.finalize()
-            report = build_ctrf_report(
-                self._run,
-                excluded_statuses=self._excluded,
-                xdist_workers=_xdist.get_worker_count(self._config),
-                extra_meta=self._meta or None,
-            )
-
             file_path = self._config.getoption(
                 "--beacon-file", default=self._settings.report_file
             )
             url = self._config.getoption(
                 "--beacon-url", default=self._settings.report_url
             )
+            xdist_workers = _xdist.get_worker_count(self._config)
 
-            exporters = []
             if url:
-                exporters.append(
-                    HttpExporter(
-                        url,
-                        self._settings.http_timeout,
-                        self._settings.http_max_retries,
-                    )
+                http_report = build_ctrf_report(
+                    self._run,
+                    plugin_version=self._settings.app_version,
+                    excluded_statuses=self._http_excluded,
+                    xdist_workers=xdist_workers,
+                    extra_meta=self._meta or None,
                 )
-            if not url or file_path:
-                # Always write a local file unless only a URL is configured and no explicit file
-                exporters.append(FileExporter(file_path, self._fmt))
+                HttpExporter(
+                    url,
+                    self._settings.http_timeout,
+                    self._settings.http_max_retries,
+                ).export(http_report)
 
-            for exporter in exporters:
-                exporter.export(report)
+            if not url or file_path:
+                # Always write a local file unless only a URL is configured and no explicit file path
+                file_report = build_ctrf_report(
+                    self._run,
+                    plugin_version=self._settings.app_version,
+                    excluded_statuses=self._file_excluded,
+                    xdist_workers=xdist_workers,
+                    extra_meta=self._meta or None,
+                )
+                FileExporter(file_path, self._fmt).export(file_report)
 
         except Exception:
             log.exception("beacon: error in pytest_sessionfinish")
@@ -293,7 +307,7 @@ class BeaconPlugin:
                 result.message = "Test was skipped"
 
             self._run.update_summary_only(status)
-            if status.value not in self._excluded:
+            if status.value not in self._storage_excluded:
                 self._run._tests.append(result)
 
             log.exception(

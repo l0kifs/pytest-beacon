@@ -45,16 +45,29 @@ def add_options(parser: pytest.Parser) -> None:
         help="Include stdout/stderr captured from passed tests (increases report size)",
     )
     group.addoption(
-        "--beacon-exclude-status",
+        "--beacon-file-exclude-status",
         action="store",
         default="passed",
         metavar="STATUSES",
         help=(
-            "Comma-separated test statuses to omit from the report output. "
+            "Comma-separated test statuses to omit from the local file report. "
             "Summary counters are always accurate regardless of this setting. "
             "Valid values: passed, failed, skipped, error. "
             "Default: 'passed'. "
-            "Use empty string to include all: --beacon-exclude-status=''"
+            "Use empty string to include all: --beacon-file-exclude-status=''"
+        ),
+    )
+    group.addoption(
+        "--beacon-http-exclude-status",
+        action="store",
+        default=None,
+        metavar="STATUSES",
+        help=(
+            "Comma-separated test statuses to omit from the HTTP export. "
+            "Falls back to --beacon-file-exclude-status if not set. "
+            "Valid values: passed, failed, skipped, error. "
+            "Default: same as --beacon-file-exclude-status. "
+            "Use empty string to include all: --beacon-http-exclude-status=''"
         ),
     )
     group.addoption(

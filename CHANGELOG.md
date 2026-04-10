@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.2.0 - 2026-04-11
+
+### Features
+
+- Add separate status exclusion controls for local file report and HTTP export.
+- Add `--beacon-file-exclude-status` CLI option (replaces `--beacon-exclude-status`) to omit statuses from the local file report. Default: `passed`.
+- Add `--beacon-http-exclude-status` CLI option to omit statuses from the HTTP export independently of the file report. Default: `passed`.
+- Add `PYTEST_BEACON__FILE_EXCLUDE_STATUSES` and `PYTEST_BEACON__HTTP_EXCLUDE_STATUSES` environment variable settings.
+
+### Fixed
+
+- Fix `pluginVersion` in CTRF report `extra` section — it was hardcoded to `"0.1.0"` and never updated with the actual installed version.
+
+### Tests
+
+- Add `TestSeparateExcludeStatuses` e2e test class covering positive and negative cases for independent HTTP/file exclude parameters.
+- Update `test_extra_section` in formatter tests to assert against the live `app_version` setting rather than a hardcoded string.
+
 ## 0.1.1 - 2026-04-07
 
 Patch release focused on report correctness and xdist reliability.

@@ -47,13 +47,13 @@ class TestPluginActivation:
 
     def test_flag_generates_report(self, pytester):
         pytester.makepyfile("def test_pass(): pass")
-        result = pytester.runpytest("--beacon", "--beacon-exclude-status=")
+        result = pytester.runpytest("--beacon", "--beacon-file-exclude-status=")
         result.assert_outcomes(passed=1)
         assert len(list(pytester.path.glob("beacon_reports/*.json"))) == 1
 
     def test_report_has_valid_ctrf_structure(self, pytester):
         pytester.makepyfile("def test_pass(): pass")
-        pytester.runpytest("--beacon", "--beacon-exclude-status=")
+        pytester.runpytest("--beacon", "--beacon-file-exclude-status=")
         data = _load_json_report(pytester)
         r = _results(data)
         assert "tool" in r
@@ -64,7 +64,7 @@ class TestPluginActivation:
 
     def test_ctrf_metadata(self, pytester):
         pytester.makepyfile("def test_pass(): pass")
-        pytester.runpytest("--beacon", "--beacon-exclude-status=")
+        pytester.runpytest("--beacon", "--beacon-file-exclude-status=")
         data = _load_json_report(pytester)
         extra = _results(data)["extra"]
         assert extra["pluginName"] == "pytest-beacon"
@@ -72,7 +72,7 @@ class TestPluginActivation:
 
     def test_environment_section(self, pytester):
         pytester.makepyfile("def test_pass(): pass")
-        pytester.runpytest("--beacon", "--beacon-exclude-status=")
+        pytester.runpytest("--beacon", "--beacon-file-exclude-status=")
         data = _load_json_report(pytester)
         env = _results(data)["environment"]
         assert "pythonVersion" in env
@@ -87,7 +87,7 @@ class TestPluginActivation:
 class TestOutcomeCapture:
     def test_passed_test(self, pytester):
         pytester.makepyfile("def test_pass(): pass")
-        pytester.runpytest("--beacon", "--beacon-exclude-status=")
+        pytester.runpytest("--beacon", "--beacon-file-exclude-status=")
         data = _load_json_report(pytester)
         s = _results(data)["summary"]
         assert s["passed"] == 1
@@ -95,7 +95,7 @@ class TestOutcomeCapture:
 
     def test_failed_test(self, pytester):
         pytester.makepyfile("def test_fail(): assert False, 'intentional failure'")
-        pytester.runpytest("--beacon", "--beacon-exclude-status=")
+        pytester.runpytest("--beacon", "--beacon-file-exclude-status=")
         data = _load_json_report(pytester)
         s = _results(data)["summary"]
         assert s["failed"] == 1
@@ -110,7 +110,7 @@ class TestOutcomeCapture:
             @pytest.mark.skip(reason="not ready")
             def test_skip(): pass
         """)
-        pytester.runpytest("--beacon", "--beacon-exclude-status=")
+        pytester.runpytest("--beacon", "--beacon-file-exclude-status=")
         data = _load_json_report(pytester)
         s = _results(data)["summary"]
         assert s["skipped"] == 1
@@ -127,7 +127,7 @@ class TestOutcomeCapture:
                 raise RuntimeError("fixture boom")
             def test_with_broken(broken): pass
         """)
-        pytester.runpytest("--beacon", "--beacon-exclude-status=")
+        pytester.runpytest("--beacon", "--beacon-file-exclude-status=")
         data = _load_json_report(pytester)
         s = _results(data)["summary"]
         assert s["error"] == 1
@@ -143,7 +143,7 @@ class TestOutcomeCapture:
             def broken(): raise RuntimeError("boom")
             def test_error(broken): pass
         """)
-        pytester.runpytest("--beacon", "--beacon-exclude-status=")
+        pytester.runpytest("--beacon", "--beacon-file-exclude-status=")
         data = _load_json_report(pytester)
         s = _results(data)["summary"]
         assert s["passed"] == 1
@@ -154,14 +154,14 @@ class TestOutcomeCapture:
 
     def test_failed_test_has_trace(self, pytester):
         pytester.makepyfile("def test_fail(): assert 1 == 2")
-        pytester.runpytest("--beacon", "--beacon-exclude-status=")
+        pytester.runpytest("--beacon", "--beacon-file-exclude-status=")
         data = _load_json_report(pytester)
         failed = [t for t in _results(data)["tests"] if t["status"] == "failed"]
         assert failed[0].get("trace") is not None
 
     def test_failed_test_has_file_and_line(self, pytester):
         pytester.makepyfile("def test_fail(): assert False")
-        pytester.runpytest("--beacon", "--beacon-exclude-status=")
+        pytester.runpytest("--beacon", "--beacon-file-exclude-status=")
         data = _load_json_report(pytester)
         failed = [t for t in _results(data)["tests"] if t["status"] == "failed"][0]
         assert "filePath" in failed
@@ -195,7 +195,7 @@ class TestStatusExclusion:
 
     def test_include_all_with_empty_string(self, pytester):
         pytester.makepyfile("def test_pass(): pass")
-        pytester.runpytest("--beacon", "--beacon-exclude-status=")
+        pytester.runpytest("--beacon", "--beacon-file-exclude-status=")
         data = _load_json_report(pytester)
         tests = _results(data)["tests"]
         assert any(t["status"] == "passed" for t in tests)
@@ -208,7 +208,7 @@ class TestStatusExclusion:
             @pytest.mark.skip(reason="s")
             def test_skip(): pass
         """)
-        pytester.runpytest("--beacon", "--beacon-exclude-status=passed,skipped")
+        pytester.runpytest("--beacon", "--beacon-file-exclude-status=passed,skipped")
         data = _load_json_report(pytester)
         tests = _results(data)["tests"]
         statuses = {t["status"] for t in tests}
@@ -226,7 +226,7 @@ class TestStatusExclusion:
             def test_pass(): pass
             def test_fail(): assert False
         """)
-        pytester.runpytest("--beacon", "--beacon-exclude-status=passed,failed")
+        pytester.runpytest("--beacon", "--beacon-file-exclude-status=passed,failed")
         data = _load_json_report(pytester)
         assert _results(data)["tests"] == []
         assert _results(data)["summary"]["tests"] == 2
@@ -260,7 +260,7 @@ class TestReportOutput:
 
     def test_yaml_format(self, pytester):
         pytester.makepyfile("def test_pass(): pass")
-        pytester.runpytest("--beacon", "--beacon-format=yaml", "--beacon-exclude-status=")
+        pytester.runpytest("--beacon", "--beacon-format=yaml", "--beacon-file-exclude-status=")
         reports = list(pytester.path.glob("beacon_reports/*.yaml"))
         assert len(reports) == 1
         data = yaml.safe_load(reports[0].read_text())
@@ -290,7 +290,7 @@ class TestVerboseMode:
             def test_with_output():
                 print("hello from test")
         """)
-        pytester.runpytest("--beacon", "--beacon-verbose", "--beacon-exclude-status=")
+        pytester.runpytest("--beacon", "--beacon-verbose", "--beacon-file-exclude-status=")
         data = _load_json_report(pytester)
         tests = _results(data)["tests"]
         passed = [t for t in tests if t["status"] == "passed"]
@@ -302,7 +302,7 @@ class TestVerboseMode:
             def test_with_output():
                 print("hello from test")
         """)
-        pytester.runpytest("--beacon", "--beacon-exclude-status=")
+        pytester.runpytest("--beacon", "--beacon-file-exclude-status=")
         data = _load_json_report(pytester)
         tests = _results(data)["tests"]
         passed = [t for t in tests if t["status"] == "passed"]
@@ -364,7 +364,7 @@ class TestTestMetadataCapture:
             @pytest.mark.smoke
             def test_marked(): pass
         """)
-        pytester.runpytest("--beacon", "--beacon-exclude-status=")
+        pytester.runpytest("--beacon", "--beacon-file-exclude-status=")
         data = _load_json_report(pytester)
         tests = _results(data)["tests"]
         marked = [t for t in tests if "smoke" in t.get("marks", [])]
@@ -377,7 +377,7 @@ class TestTestMetadataCapture:
             @pytest.mark.allure_id("TC-42")
             def test_with_allure_id(): pass
         """)
-        pytester.runpytest("--beacon", "--beacon-exclude-status=")
+        pytester.runpytest("--beacon", "--beacon-file-exclude-status=")
         data = _load_json_report(pytester)
         tests = _results(data)["tests"]
         assert tests[0].get("allureId") == "TC-42"
@@ -385,7 +385,7 @@ class TestTestMetadataCapture:
     def test_allure_id_absent_when_no_mark(self, pytester):
         """allureId must not appear in the report when no allure mark is used."""
         pytester.makepyfile("def test_plain(): pass")
-        pytester.runpytest("--beacon", "--beacon-exclude-status=")
+        pytester.runpytest("--beacon", "--beacon-file-exclude-status=")
         data = _load_json_report(pytester)
         tests = _results(data)["tests"]
         assert "allureId" not in tests[0]
@@ -396,7 +396,7 @@ class TestTestMetadataCapture:
             @pytest.mark.parametrize("x,y", [(1, 2), (3, 4)])
             def test_param(x, y): pass
         """)
-        pytester.runpytest("--beacon", "--beacon-exclude-status=")
+        pytester.runpytest("--beacon", "--beacon-file-exclude-status=")
         data = _load_json_report(pytester)
         tests = _results(data)["tests"]
         assert len(tests) == 2
@@ -417,7 +417,7 @@ class TestCollectionErrors:
             import totally_nonexistent_module_xyz
             def test_something(): pass
         """)
-        pytester.runpytest("--beacon", "--beacon-exclude-status=")
+        pytester.runpytest("--beacon", "--beacon-file-exclude-status=")
         data = _load_json_report(pytester)
         s = _results(data)["summary"]
         assert s["error"] >= 1
@@ -427,7 +427,7 @@ class TestCollectionErrors:
             import totally_nonexistent_module_xyz
             def test_something(): pass
         """)
-        pytester.runpytest("--beacon", "--beacon-exclude-status=")
+        pytester.runpytest("--beacon", "--beacon-file-exclude-status=")
         data = _load_json_report(pytester)
         errors = [t for t in _results(data)["tests"] if t["status"] == "error"]
         assert len(errors) >= 1
@@ -440,7 +440,7 @@ class TestCollectionErrors:
             def test_b(): pass
             def test_c(): pass
         """)
-        pytester.runpytest("--beacon", "--beacon-exclude-status=")
+        pytester.runpytest("--beacon", "--beacon-file-exclude-status=")
         data = _load_json_report(pytester)
         errors = [t for t in _results(data)["tests"] if t["status"] == "error"]
         assert len(errors) == 1
@@ -465,7 +465,7 @@ class TestXdist:
             @pytest.mark.parametrize("n", list(range(8)))
             def test_parallel(n): pass
         """)
-        result = pytester.runpytest("--beacon", "--beacon-exclude-status=", "-n", "2")
+        result = pytester.runpytest("--beacon", "--beacon-file-exclude-status=", "-n", "2")
         result.assert_outcomes(passed=8)
         data = _load_json_report(pytester)
         s = _results(data)["summary"]
@@ -474,7 +474,7 @@ class TestXdist:
 
     def test_xdist_worker_count_in_environment(self, pytester):
         pytester.makepyfile("def test_pass(): pass")
-        pytester.runpytest("--beacon", "--beacon-exclude-status=", "-n", "2")
+        pytester.runpytest("--beacon", "--beacon-file-exclude-status=", "-n", "2")
         data = _load_json_report(pytester)
         env = _results(data)["environment"]
         assert "xdistWorkers" in env
@@ -486,7 +486,7 @@ class TestXdist:
             def test_some_fail(n):
                 assert n != 1  # index 1 fails
         """)
-        pytester.runpytest("--beacon", "--beacon-exclude-status=", "-n", "2")
+        pytester.runpytest("--beacon", "--beacon-file-exclude-status=", "-n", "2")
         data = _load_json_report(pytester)
         s = _results(data)["summary"]
         assert s["passed"] == 2
@@ -526,7 +526,7 @@ class TestXdist:
             def test_error_b(broken):
                 pass
         """)
-        result = pytester.runpytest("--beacon", "--beacon-exclude-status=", "-n", "2")
+        result = pytester.runpytest("--beacon", "--beacon-file-exclude-status=", "-n", "2")
         result.assert_outcomes(errors=2)
 
         data = _load_json_report(pytester)
@@ -559,7 +559,7 @@ class TestHookwrapperFailures:
                 assert False, "second failure"
         """)
 
-        result = pytester.runpytest("--beacon", "--beacon-exclude-status=")
+        result = pytester.runpytest("--beacon", "--beacon-file-exclude-status=")
         assert result.ret == 3  # internal error from the synthetic crashing plugin
         data = _load_json_report(pytester)
         summary = _results(data)["summary"]
@@ -650,3 +650,241 @@ class TestHttpExport:
         server.server_close()
 
         assert list(pytester.path.glob("beacon_reports/*.json")) == []
+
+
+# ---------------------------------------------------------------------------
+# Separate exclude parameters for HTTP export and local file
+# ---------------------------------------------------------------------------
+
+
+def _run_with_server(pytester, args):
+    """Start a one-request HTTP server, run pytester with args, return captured body.
+
+    A local file is always written (via --beacon-file) so tests can inspect both outputs.
+    """
+    _CapturingHandler.received_bodies = []
+    server = HTTPServer(("127.0.0.1", 0), _CapturingHandler)
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.handle_request)
+    thread.daemon = True
+    thread.start()
+
+    file_path = pytester.path / "beacon_reports" / "report.json"
+    pytester.runpytest(
+        "--beacon",
+        f"--beacon-url=http://127.0.0.1:{port}",
+        f"--beacon-file={file_path}",
+        *args,
+    )
+
+    thread.join(timeout=5)
+    server.server_close()
+
+    body = _CapturingHandler.received_bodies[0] if _CapturingHandler.received_bodies else {}
+    return body, port
+
+
+class TestSeparateExcludeStatuses:
+    # ------------------------------------------------------------------
+    # Positive: HTTP export includes passed when http-exclude-status=''
+    # ------------------------------------------------------------------
+
+    def test_http_includes_passed_when_http_exclude_empty(self, pytester):
+        """--beacon-http-exclude-status='' sends passed tests to HTTP but not to file."""
+        pytester.makepyfile("def test_pass(): pass")
+        body, port = _run_with_server(pytester, ["--beacon-http-exclude-status="])
+
+        http_statuses = {m["test_result"] for m in body.get("metrics", [])}
+        assert "passed" in http_statuses
+
+        # File report still excludes passed by default
+        data = _load_json_report(pytester)
+        file_tests = _results(data)["tests"]
+        assert all(t["status"] != "passed" for t in file_tests)
+
+    def test_file_includes_passed_when_file_exclude_empty(self, pytester):
+        """--beacon-file-exclude-status='' includes passed in file but HTTP uses its own default."""
+        pytester.makepyfile("def test_pass(): pass")
+        body, port = _run_with_server(pytester, ["--beacon-file-exclude-status="])
+
+        http_statuses = {m["test_result"] for m in body.get("metrics", [])}
+        # HTTP still uses its default (passed excluded)
+        assert "passed" not in http_statuses
+
+        data = _load_json_report(pytester)
+        file_tests = _results(data)["tests"]
+        assert any(t["status"] == "passed" for t in file_tests)
+
+    def test_both_outputs_include_passed_when_both_excludes_empty(self, pytester):
+        """Both outputs include passed when both exclude flags are empty."""
+        pytester.makepyfile("def test_pass(): pass")
+        body, port = _run_with_server(
+            pytester, ["--beacon-file-exclude-status=", "--beacon-http-exclude-status="]
+        )
+
+        http_statuses = {m["test_result"] for m in body.get("metrics", [])}
+        assert "passed" in http_statuses
+
+        data = _load_json_report(pytester)
+        file_statuses = {t["status"] for t in _results(data)["tests"]}
+        assert "passed" in file_statuses
+
+    def test_http_excludes_failed_independently(self, pytester):
+        """HTTP can exclude failed while file report still contains it."""
+        pytester.makepyfile("""
+            def test_pass(): pass
+            def test_fail(): assert False
+        """)
+        body, port = _run_with_server(
+            pytester,
+            [
+                "--beacon-file-exclude-status=passed",
+                "--beacon-http-exclude-status=passed,failed",
+            ],
+        )
+
+        http_statuses = {m["test_result"] for m in body.get("metrics", [])}
+        assert "failed" not in http_statuses
+
+        data = _load_json_report(pytester)
+        file_statuses = {t["status"] for t in _results(data)["tests"]}
+        assert "failed" in file_statuses
+
+    def test_file_excludes_failed_independently(self, pytester):
+        """File can exclude failed while HTTP report still contains it."""
+        pytester.makepyfile("""
+            def test_pass(): pass
+            def test_fail(): assert False
+        """)
+        body, port = _run_with_server(
+            pytester,
+            [
+                "--beacon-file-exclude-status=passed,failed",
+                "--beacon-http-exclude-status=passed",
+            ],
+        )
+
+        http_statuses = {m["test_result"] for m in body.get("metrics", [])}
+        assert "failed" in http_statuses
+
+        data = _load_json_report(pytester)
+        file_statuses = {t["status"] for t in _results(data)["tests"]}
+        assert "failed" not in file_statuses
+
+    def test_http_exclude_falls_back_to_settings_default_not_file_exclude(self, pytester):
+        """When --beacon-http-exclude-status is not set, HTTP uses its own settings default
+        (passed), NOT the value of --beacon-file-exclude-status."""
+        pytester.makepyfile("""
+            def test_pass(): pass
+            def test_fail(): assert False
+        """)
+        # Override file exclude to include all; HTTP should still default to excluding passed
+        body, port = _run_with_server(pytester, ["--beacon-file-exclude-status=skipped"])
+
+        http_statuses = {m["test_result"] for m in body.get("metrics", [])}
+        # HTTP defaults to excluding "passed" regardless of --beacon-file-exclude-status
+        assert "passed" not in http_statuses
+        assert "failed" in http_statuses
+
+        data = _load_json_report(pytester)
+        file_statuses = {t["status"] for t in _results(data)["tests"]}
+        # File excludes only "skipped", so passed and failed both appear
+        assert "passed" in file_statuses
+        assert "failed" in file_statuses
+
+    def test_summary_accurate_regardless_of_separate_excludes(self, pytester):
+        """Summary counters must be correct even with different exclude sets."""
+        pytester.makepyfile("""
+            def test_pass(): pass
+            def test_fail(): assert False
+        """)
+        body, port = _run_with_server(
+            pytester,
+            ["--beacon-file-exclude-status=passed", "--beacon-http-exclude-status=failed"],
+        )
+
+        data = _load_json_report(pytester)
+        s = _results(data)["summary"]
+        assert s["passed"] == 1
+        assert s["failed"] == 1
+        assert s["tests"] == 2
+
+    def test_http_and_file_can_have_completely_different_statuses(self, pytester):
+        """HTTP and file can each include entirely different subsets of test statuses."""
+        pytester.makepyfile("""
+            import pytest
+            def test_pass(): pass
+            def test_fail(): assert False
+            @pytest.mark.skip(reason="s")
+            def test_skip(): pass
+        """)
+        # File: only failed; HTTP: only skipped
+        body, port = _run_with_server(
+            pytester,
+            [
+                "--beacon-file-exclude-status=passed,skipped",
+                "--beacon-http-exclude-status=passed,failed",
+            ],
+        )
+
+        http_statuses = {m["test_result"] for m in body.get("metrics", [])}
+        assert http_statuses == {"skipped"}
+
+        data = _load_json_report(pytester)
+        file_statuses = {t["status"] for t in _results(data)["tests"]}
+        assert file_statuses == {"failed"}
+
+    # ------------------------------------------------------------------
+    # Negative: wrong / edge-case inputs
+    # ------------------------------------------------------------------
+
+    def test_unknown_status_in_http_exclude_is_ignored(self, pytester):
+        """Unknown status values in --beacon-http-exclude-status do not crash the plugin."""
+        pytester.makepyfile("def test_pass(): pass")
+        body, port = _run_with_server(
+            pytester, ["--beacon-http-exclude-status=notastatus,passed"]
+        )
+        # Plugin ran without crash; passed excluded by the valid part of the flag
+        http_statuses = {m["test_result"] for m in body.get("metrics", [])}
+        assert "passed" not in http_statuses
+
+    def test_http_exclude_all_statuses_sends_empty_metrics(self, pytester):
+        """Excluding every status from HTTP results in an empty metrics list."""
+        pytester.makepyfile("""
+            def test_pass(): pass
+            def test_fail(): assert False
+        """)
+        body, port = _run_with_server(
+            pytester,
+            ["--beacon-http-exclude-status=passed,failed,skipped,error,other"],
+        )
+        assert body.get("metrics") == []
+
+    def test_file_exclude_all_statuses_produces_empty_tests(self, pytester):
+        """Excluding every status from file results in an empty tests array in the report."""
+        pytester.makepyfile("""
+            def test_pass(): pass
+            def test_fail(): assert False
+        """)
+        body, port = _run_with_server(
+            pytester,
+            ["--beacon-file-exclude-status=passed,failed,skipped,error,other"],
+        )
+        data = _load_json_report(pytester)
+        assert _results(data)["tests"] == []
+        # HTTP still has results under its default (passed excluded)
+        http_statuses = {m["test_result"] for m in body.get("metrics", [])}
+        assert "failed" in http_statuses
+
+    def test_whitespace_in_http_exclude_is_stripped(self, pytester):
+        """Spaces around status names in --beacon-http-exclude-status are stripped."""
+        pytester.makepyfile("""
+            def test_pass(): pass
+            def test_fail(): assert False
+        """)
+        body, port = _run_with_server(
+            pytester, ["--beacon-http-exclude-status= passed , failed "]
+        )
+        http_statuses = {m["test_result"] for m in body.get("metrics", [])}
+        assert "passed" not in http_statuses
+        assert "failed" not in http_statuses
