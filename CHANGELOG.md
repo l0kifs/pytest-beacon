@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.3.0 - 2026-04-17
+
+### Features
+
+- Add `pytestSummary` field to `results.extra` in CTRF report, mirroring pytest's own terminal-reporter categories (`failed`, `passed`, `skipped`, `deselected`, `xfailed`, `xpassed`, `warnings`, `error`, `rerun`).
+- Print a `Pytest:` summary line in local console output that matches pytest's terminal summary format, making it easy to compare beacon output with the pytest final line.
+- Track teardown failures: tests that pass the call phase but raise in teardown are now correctly reclassified as `failed` and their summary counters updated accordingly.
+
+### Tests
+
+- Add formatter tests asserting `pytestSummary` is included in the CTRF `extra` section.
+- Add e2e tests covering teardown failure reclassification and `pytestSummary` in exported reports.
+
 ## 0.2.0 - 2026-04-11
 
 ### Features

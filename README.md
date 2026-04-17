@@ -109,6 +109,14 @@ All variables use the `PYTEST_BEACON__` prefix. Can also be set in a `.env` file
 
 Summary counters always reflect all tests regardless of `--beacon-file-exclude-status` or `--beacon-http-exclude-status`.
 
+Beacon also stores a pytest-style summary in `results.extra.pytestSummary` when pytest's terminal reporter is available. This mirrors pytest's own terminal categories as closely as possible, which makes it easy to compare beacon output with the pytest final line.
+
+The local console output includes this as an extra line, for example:
+
+```text
+Pytest:  79 failed, 759 passed, 123 skipped, 3 xfailed, 57 warnings, 12 errors, 4 rerun in 1211.04s
+```
+
 <details>
 <summary>📄 <b>Example CTRF JSON Report</b> (click to expand)</summary>
 
@@ -135,7 +143,15 @@ Summary counters always reflect all tests regardless of `--beacon-file-exclude-s
       }
     ],
     "environment": { "pythonVersion": "3.12.0", "pytestVersion": "9.0.0", "xdistWorkers": 4, "build": "123", "branch": "main" },
-    "extra": { "pluginName": "pytest-beacon", "pluginVersion": "0.2.0", "ctrf": "1.0.0" }
+    "extra": {
+      "pluginName": "pytest-beacon",
+      "pluginVersion": "0.2.0",
+      "ctrf": "1.0.0",
+      "pytestSummary": {
+        "failed": 2, "passed": 9, "skipped": 1, "deselected": 0,
+        "xfailed": 0, "xpassed": 0, "warnings": 0, "error": 0, "rerun": 0
+      }
+    }
   }
 }
 ```

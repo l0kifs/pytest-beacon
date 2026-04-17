@@ -21,6 +21,7 @@ def build_ctrf_report(
     excluded_statuses: set[str] | None = None,
     xdist_workers: int | None = None,
     extra_meta: dict[str, str] | None = None,
+    pytest_summary: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     """Return a CTRF 1.0.0 report dict from *run*."""
     if plugin_version is None:
@@ -45,6 +46,15 @@ def build_ctrf_report(
 
     summary = run.summary  # already includes start/stop
 
+    extra_section: dict[str, Any] = {
+        "pluginName": plugin_name,
+        "pluginVersion": plugin_version,
+        "ctrf": "1.0.0",
+        "generatedAt": summary["stop"],
+    }
+    if pytest_summary:
+        extra_section["pytestSummary"] = pytest_summary
+
     return {
         "results": {
             "tool": {
@@ -54,12 +64,7 @@ def build_ctrf_report(
             "summary": summary,
             "tests": tests_section,
             "environment": environment,
-            "extra": {
-                "pluginName": plugin_name,
-                "pluginVersion": plugin_version,
-                "ctrf": "1.0.0",
-                "generatedAt": summary["stop"],
-            },
+            "extra": extra_section,
         }
     }
 

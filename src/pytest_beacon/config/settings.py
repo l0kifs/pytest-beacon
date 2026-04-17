@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     # Application settings
     app_name: str = Field(default="pytest-beacon", description="Application name")
-    app_version: str = Field(default="0.2.0", description="Application version")
+    app_version: str = Field(default="0.3.0", description="Application version")
 
     # Plugin activation (can also be set via env var as fallback)
     generate_report: bool = Field(default=False, description="Enable beacon reporting (overridden by --beacon CLI flag)")

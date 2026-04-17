@@ -40,6 +40,8 @@ class BeaconPlugin:
         self._run = TestRun()
         self._processed_tests: set[str] = set()
         self._processed_collection_errors: set[str] = set()
+        self._result_statuses: dict[str, TestStatus] = {}
+        self._result_indexes: dict[str, int] = {}
 
         # CLI options override settings
         self._fmt: str = config.getoption(
@@ -131,13 +133,26 @@ class BeaconPlugin:
             return
 
         try:
-            should_process = report.when == "call" or (
-                report.when == "setup"
-                and report.outcome in ("skipped", "failed", "error")
+            should_process = (
+                report.when == "call"
+                or (
+                    report.when == "setup"
+                    and report.outcome in ("skipped", "failed", "error")
+                )
+                or (
+                    report.when == "teardown"
+                    and report.outcome in ("failed", "error")
+                )
             )
+            previous_status = self._result_statuses.get(item.nodeid)
             is_new = report.when == "call" or item.nodeid not in self._processed_tests
+            is_teardown_override = (
+                report.when == "teardown"
+                and report.outcome in ("failed", "error")
+                and previous_status == TestStatus.PASSED
+            )
 
-            if not (should_process and is_new):
+            if not (should_process and (is_new or is_teardown_override)):
                 return
 
             self._processed_tests.add(item.nodeid)
@@ -189,9 +204,7 @@ class BeaconPlugin:
                     :1000
                 ] or None
 
-            self._run.update_summary_only(status)
-            if status.value not in self._storage_excluded:
-                self._run._tests.append(result)
+            self._store_result(item.nodeid, result)
 
         except Exception:
             log.exception(
@@ -239,12 +252,14 @@ class BeaconPlugin:
             xdist_workers = _xdist.get_worker_count(self._config)
 
             if url:
+                pytest_summary = _extract_pytest_summary(self._config)
                 http_report = build_ctrf_report(
                     self._run,
                     plugin_version=self._settings.app_version,
                     excluded_statuses=self._http_excluded,
                     xdist_workers=xdist_workers,
                     extra_meta=self._meta or None,
+                    pytest_summary=pytest_summary,
                 )
                 HttpExporter(
                     url,
@@ -254,12 +269,14 @@ class BeaconPlugin:
 
             if not url or file_path:
                 # Always write a local file unless only a URL is configured and no explicit file path
+                pytest_summary = _extract_pytest_summary(self._config)
                 file_report = build_ctrf_report(
                     self._run,
                     plugin_version=self._settings.app_version,
                     excluded_statuses=self._file_excluded,
                     xdist_workers=xdist_workers,
                     extra_meta=self._meta or None,
+                    pytest_summary=pytest_summary,
                 )
                 FileExporter(file_path, self._fmt).export(file_report)
 
@@ -274,11 +291,19 @@ class BeaconPlugin:
     ) -> None:
         """Best-effort reporting when makereport hookwrapper teardown raises."""
         try:
-            should_process = call.when == "call" or (
-                call.when == "setup" and bool(getattr(call, "excinfo", None))
+            should_process = (
+                call.when == "call"
+                or (call.when == "setup" and bool(getattr(call, "excinfo", None)))
+                or (call.when == "teardown" and bool(getattr(call, "excinfo", None)))
             )
+            previous_status = self._result_statuses.get(item.nodeid)
             is_new = call.when == "call" or item.nodeid not in self._processed_tests
-            if not (should_process and is_new):
+            is_teardown_override = (
+                call.when == "teardown"
+                and bool(getattr(call, "excinfo", None))
+                and previous_status == TestStatus.PASSED
+            )
+            if not (should_process and (is_new or is_teardown_override)):
                 return
 
             self._processed_tests.add(item.nodeid)
@@ -306,9 +331,7 @@ class BeaconPlugin:
             elif status == TestStatus.SKIPPED:
                 result.message = "Test was skipped"
 
-            self._run.update_summary_only(status)
-            if status.value not in self._storage_excluded:
-                self._run._tests.append(result)
+            self._store_result(item.nodeid, result)
 
             log.exception(
                 "beacon: recovered from makereport hookwrapper exception",
@@ -320,6 +343,43 @@ class BeaconPlugin:
                 "beacon: failed to record fallback result",
                 nodeid=getattr(item, "nodeid", "?"),
             )
+
+    def _store_result(self, nodeid: str, result: TestResult) -> None:
+        """Store a test result, replacing an earlier passed outcome when needed."""
+        previous_status = self._result_statuses.get(nodeid)
+        if previous_status is None:
+            self._run.update_summary_only(result.status)
+            if result.status.value not in self._storage_excluded:
+                self._result_indexes[nodeid] = len(self._run._tests)
+                self._run._tests.append(result)
+            self._result_statuses[nodeid] = result.status
+            return
+
+        if previous_status == result.status:
+            return
+
+        self._decrement_summary(previous_status)
+        self._run.update_summary_only(result.status)
+        self._result_statuses[nodeid] = result.status
+
+        index = self._result_indexes.get(nodeid)
+        if index is not None:
+            if result.status.value in self._storage_excluded:
+                del self._run._tests[index]
+                del self._result_indexes[nodeid]
+                for stored_nodeid, stored_index in list(self._result_indexes.items()):
+                    if stored_index > index:
+                        self._result_indexes[stored_nodeid] = stored_index - 1
+            else:
+                self._run._tests[index] = result
+        elif result.status.value not in self._storage_excluded:
+            self._result_indexes[nodeid] = len(self._run._tests)
+            self._run._tests.append(result)
+
+    def _decrement_summary(self, status: TestStatus) -> None:
+        self._run._summary["tests"] -= 1
+        key = status.value if status.value in ("passed", "failed", "skipped", "error", "other") else "other"
+        self._run._summary[key] -= 1
 
 
 # ---------------------------------------------------------------------------
@@ -456,6 +516,44 @@ def _extract_allure_id(item: pytest.Item) -> str | None:
     except Exception:
         pass
     return None
+
+
+def _extract_pytest_summary(config: pytest.Config) -> dict[str, int] | None:
+    """Extract pytest terminal-summary style counters from terminalreporter stats."""
+    terminalreporter = config.pluginmanager.get_plugin("terminalreporter")
+    if terminalreporter is None:
+        return None
+
+    stats = getattr(terminalreporter, "stats", None)
+    if not stats:
+        return None
+
+    aliases = {
+        "errors": "error",
+        "warnings": "warnings",
+        "warning": "warnings",
+        "rerun": "rerun",
+        "reruns": "rerun",
+    }
+    ordered_keys = (
+        "failed",
+        "passed",
+        "skipped",
+        "deselected",
+        "xfailed",
+        "xpassed",
+        "warnings",
+        "error",
+        "rerun",
+    )
+
+    summary: dict[str, int] = {key: 0 for key in ordered_keys}
+    for raw_key, values in stats.items():
+        key = aliases.get(raw_key, raw_key)
+        if key in summary:
+            summary[key] = len(values)
+
+    return summary
 
 
 def _parse_meta(raw: list[str]) -> dict[str, str]:

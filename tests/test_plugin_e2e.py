@@ -173,6 +173,27 @@ class TestOutcomeCapture:
         data = _load_json_report(pytester)
         assert _results(data)["summary"]["tests"] == 0
 
+    def test_pytest_summary_is_included(self, pytester):
+        pytester.makepyfile("""
+            import pytest
+            import warnings
+
+            def test_pass():
+                warnings.warn("careful", UserWarning)
+
+            @pytest.mark.xfail(reason="known issue")
+            def test_expected_failure():
+                assert False
+        """)
+        pytester.runpytest("--beacon", "--beacon-file-exclude-status=")
+        data = _load_json_report(pytester)
+        pytest_summary = _results(data)["extra"]["pytestSummary"]
+        assert pytest_summary["passed"] == 1
+        assert pytest_summary["xfailed"] == 1
+        assert pytest_summary["warnings"] == 1
+        assert pytest_summary["failed"] == 0
+        assert pytest_summary["error"] == 0
+
 
 # ---------------------------------------------------------------------------
 # Status exclusion
@@ -566,6 +587,35 @@ class TestHookwrapperFailures:
 
         assert summary["failed"] == 1
         assert summary["tests"] == 1
+
+
+class TestTeardownFailures:
+    def test_teardown_only_failure_is_reported(self, pytester):
+        """Fixture teardown failures should be recorded when call phase passed."""
+        pytester.makepyfile("""
+            import pytest
+
+            @pytest.fixture
+            def broken_teardown():
+                yield
+                raise RuntimeError("teardown boom")
+
+            def test_teardown_only_failure(broken_teardown):
+                assert True
+        """)
+
+        result = pytester.runpytest("--beacon", "--beacon-file-exclude-status=")
+        result.assert_outcomes(passed=1, errors=1)
+
+        data = _load_json_report(pytester)
+        summary = _results(data)["summary"]
+        tests = _results(data)["tests"]
+
+        assert summary["tests"] == 1
+        assert summary["failed"] == 1
+        assert len(tests) == 1
+        assert tests[0]["status"] == "failed"
+        assert "teardown boom" in tests[0]["message"]
 
 
 # ---------------------------------------------------------------------------

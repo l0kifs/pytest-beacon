@@ -72,6 +72,13 @@ class TestReportStructure:
         assert extra["pluginName"] == "my-plugin"
         assert extra["pluginVersion"] == "2.0.0"
 
+    def test_pytest_summary_added_to_extra_when_provided(self):
+        report = build_ctrf_report(
+            _run_with(),
+            pytest_summary={"passed": 1, "failed": 0, "skipped": 0, "deselected": 0, "xfailed": 0, "xpassed": 0, "warnings": 0, "error": 0, "rerun": 0},
+        )
+        assert report["results"]["extra"]["pytestSummary"]["passed"] == 1
+
 
 # ---------------------------------------------------------------------------
 # Summary counts

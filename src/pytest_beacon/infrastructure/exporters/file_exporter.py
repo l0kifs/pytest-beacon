@@ -84,6 +84,7 @@ class FileExporter:
     def _print_summary(self, report: dict[str, Any]) -> None:
         try:
             summary = report["results"]["summary"]
+            pytest_summary = report["results"].get("extra", {}).get("pytestSummary")
             sep = "=" * 60
             print(f"\n{sep}")
             print(f"pytest-beacon report: {self._output_path}")
@@ -96,6 +97,30 @@ class FileExporter:
             print(f"Skipped: {summary['skipped']}")
             duration_s = (summary["stop"] - summary["start"]) / 1000
             print(f"Time:    {duration_s:.2f}s")
+            if pytest_summary:
+                print(f"Pytest:  {_format_pytest_summary_line(pytest_summary, duration_s)}")
             print(f"{sep}\n")
         except Exception:
             pass
+
+
+def _format_pytest_summary_line(summary: dict[str, int], duration_s: float) -> str:
+    ordered_parts = (
+        ("failed", "failed"),
+        ("passed", "passed"),
+        ("skipped", "skipped"),
+        ("deselected", "deselected"),
+        ("xfailed", "xfailed"),
+        ("xpassed", "xpassed"),
+        ("warnings", "warnings"),
+        ("error", "errors"),
+        ("rerun", "rerun"),
+    )
+    parts = [
+        f"{summary[key]} {label}"
+        for key, label in ordered_parts
+        if summary.get(key, 0)
+    ]
+    if not parts:
+        parts.append("0 tests")
+    return f"{', '.join(parts)} in {duration_s:.2f}s"
