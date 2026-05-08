@@ -8,6 +8,8 @@ Entry point registered in pyproject.toml as:
 
 from __future__ import annotations
 
+import logging
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -15,7 +17,7 @@ import pytest
 
 from pytest_beacon.config.settings import get_settings
 from pytest_beacon.domains.test_run.entities import TestResult, TestRun
-from pytest_beacon.domains.test_run.value_objects import TestStatus
+from pytest_beacon.domains.test_run.value_objects import LogEntry, TestLogs, TestStatus
 from pytest_beacon.entry_points.pytest_plugin import options as _options
 from pytest_beacon.entry_points.pytest_plugin import xdist as _xdist
 from pytest_beacon.infrastructure.exporters.file_exporter import FileExporter
@@ -70,6 +72,31 @@ class BeaconPlugin:
             config.getoption("--beacon-meta", default=[])
         )
 
+        # Log capture settings
+        self._logs_enabled: bool = config.getoption(
+            "--beacon-logs", default=self._settings.logs_enabled
+        )
+        logs_level_str: str = config.getoption(
+            "--beacon-logs-level", default=self._settings.logs_level
+        )
+        self._logs_min_level: int = getattr(
+            logging, logs_level_str.upper(), logging.WARNING
+        )
+        logs_max_raw = config.getoption(
+            "--beacon-logs-max", default=self._settings.logs_max_per_category
+        )
+        self._logs_max_per_category: int | None = (
+            int(logs_max_raw) if logs_max_raw is not None else None
+        )
+        # Accumulates per-phase log entries keyed by nodeid then phase name
+        self._pending_logs: dict[str, dict[str, list[LogEntry]]] = {}
+
+        # Handler installed on the root logger during the collection phase
+        self._collection_log_handler: _CollectionLogHandler | None = None
+        if self._logs_enabled:
+            self._collection_log_handler = _CollectionLogHandler(self._logs_min_level)
+            logging.root.addHandler(self._collection_log_handler)
+
         log.debug(
             "beacon: plugin initialised",
             fmt=self._fmt,
@@ -84,8 +111,30 @@ class BeaconPlugin:
     # ------------------------------------------------------------------
 
     @pytest.hookimpl
+    def pytest_collection_finish(self, session: pytest.Session) -> None:  # noqa: ARG002
+        """Finalise general log capture after the collection phase completes."""
+        if not self._logs_enabled or self._collection_log_handler is None:
+            return
+        logging.root.removeHandler(self._collection_log_handler)
+        records = self._collection_log_handler.records
+        self._collection_log_handler = None
+        entries: list[LogEntry] = [
+            LogEntry(
+                level=r.levelname,
+                message=r.getMessage(),
+                logger=r.name,
+                timestamp=datetime.fromtimestamp(r.created, tz=timezone.utc).isoformat(),
+            )
+            for r in records
+        ]
+        if self._logs_max_per_category is not None:
+            entries = entries[: self._logs_max_per_category]
+        if entries:
+            self._run.add_general_logs(entries)
+
+    @pytest.hookimpl
     def pytest_collectreport(self, report: pytest.CollectReport) -> None:
-        """Capture collection errors (import errors, syntax errors, etc.)."""
+        """Capture collection errors."""
         if report.outcome not in ("failed", "error"):
             return
         try:
@@ -133,6 +182,16 @@ class BeaconPlugin:
             return
 
         try:
+            # Always capture logs for this phase if log capture is enabled
+            if self._logs_enabled and report.when in ("setup", "call", "teardown"):
+                phase_logs = _parse_log_section_from_sections(
+                    getattr(report, "sections", []),
+                    report.when,
+                    self._logs_min_level,
+                    self._logs_max_per_category,
+                )
+                self._pending_logs.setdefault(item.nodeid, {})[report.when] = phase_logs
+
             should_process = (
                 report.when == "call"
                 or (
@@ -151,6 +210,27 @@ class BeaconPlugin:
                 and report.outcome in ("failed", "error")
                 and previous_status == TestStatus.PASSED
             )
+
+            # For a successful teardown, patch teardown logs onto the already-stored result
+            if (
+                self._logs_enabled
+                and report.when == "teardown"
+                and not should_process
+            ):
+                index = self._result_indexes.get(item.nodeid)
+                if index is not None and index < len(self._run._tests):
+                    stored = self._run._tests[index]
+                    if stored.logs is not None:
+                        teardown_logs = (
+                            self._pending_logs.get(item.nodeid, {}).get("teardown", [])
+                        )
+                        self._run._tests[index] = stored.model_copy(
+                            update={
+                                "logs": stored.logs.model_copy(
+                                    update={"teardown": teardown_logs}
+                                )
+                            }
+                        )
 
             if not (should_process and (is_new or is_teardown_override)):
                 return
@@ -203,6 +283,14 @@ class BeaconPlugin:
                 result.stderr = (getattr(report, "capstderr", None) or "")[
                     :1000
                 ] or None
+
+            if self._logs_enabled:
+                pending = self._pending_logs.get(item.nodeid, {})
+                result.logs = TestLogs(
+                    setup=pending.get("setup", []),
+                    call=pending.get("call", []),
+                    teardown=pending.get("teardown", []),
+                )
 
             self._store_result(item.nodeid, result)
 
@@ -483,7 +571,13 @@ def _failure_location(excinfo: Any) -> dict[str, Any] | None:
 
 def _extract_marks(item: pytest.Item) -> list[str]:
     try:
-        return [mark.name for mark in item.iter_markers()]
+        seen: set[str] = set()
+        result: list[str] = []
+        for mark in item.iter_markers():
+            if mark.name not in seen:
+                seen.add(mark.name)
+                result.append(mark.name)
+        return result
     except Exception:
         return []
 
@@ -566,3 +660,88 @@ def _parse_meta(raw: list[str]) -> dict[str, str]:
             if key:
                 result[key] = value
     return result
+
+
+# ---------------------------------------------------------------------------
+# Collection-phase log capture
+# ---------------------------------------------------------------------------
+
+
+class _CollectionLogHandler(logging.Handler):
+    """Captures log records emitted during the pytest collection phase."""
+
+    def __init__(self, min_level: int) -> None:
+        super().__init__(level=min_level)
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)
+
+
+# ---------------------------------------------------------------------------
+# Log capture helpers
+# ---------------------------------------------------------------------------
+
+# Matches the default pytest log format:
+# %(levelname)-8s %(name)s:%(filename)s:%(lineno)d %(message)s
+# Example: "WARNING  mylogger:test_file.py:42 Something went wrong"
+_LOG_LINE_RE = re.compile(
+    r"^(?P<level>[A-Z]+)\s+"
+    r"(?P<logger>[^:]+):"
+    r"[^:]+:"      # filename (ignored)
+    r"\d+\s+"      # lineno + whitespace (ignored)
+    r"(?P<message>.*)$"
+)
+
+_PHASE_SECTION_TITLES = {
+    "setup": "captured log setup",
+    "call": "captured log call",
+    "teardown": "captured log teardown",
+}
+
+
+def _parse_log_section_from_sections(
+    sections: list[tuple[str, str]],
+    phase: str,
+    min_level: int,
+    max_entries: int | None,
+) -> list[LogEntry]:
+    """Extract and parse log entries from pytest report sections for the given *phase*."""
+    for title, content in sections:
+        if not content:
+            continue
+        expected = _PHASE_SECTION_TITLES.get(phase, "")
+        if expected and title.lower() == expected:
+            return _parse_log_text(content, min_level, max_entries)
+    return []
+
+
+def _parse_log_text(
+    text: str, min_level: int, max_entries: int | None
+) -> list[LogEntry]:
+    """Parse a captured log text block into a list of :class:`LogEntry` objects.
+
+    Lines that do not match the default pytest log format are silently skipped.
+    """
+    entries: list[LogEntry] = []
+    for line in text.splitlines():
+        stripped = line.rstrip()
+        if not stripped:
+            continue
+        m = _LOG_LINE_RE.match(stripped)
+        if not m:
+            continue
+        level = m.group("level")
+        numeric_level = getattr(logging, level, None)
+        if numeric_level is None or numeric_level < min_level:
+            continue
+        entries.append(
+            LogEntry(
+                level=level,
+                message=m.group("message"),
+                logger=m.group("logger").strip(),
+            )
+        )
+    if max_entries is not None:
+        entries = entries[:max_entries]
+    return entries

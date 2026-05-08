@@ -78,17 +78,19 @@ class HttpExporter:
         environment = results.get("environment", {})
         metrics = []
         for test in results.get("tests", []):
-            metrics.append(
-                {
-                    "test_nodeid": test.get("name"),
-                    "test_name": test.get("name", "").split("::")[-1],
-                    "test_result": test.get("status", "other"),
-                    "test_duration": test.get("duration", 0) / 1000,  # ms → seconds
-                    "test_marks": test.get("marks", []),
-                    "test_params": test.get("params", {}),
-                    "test_stacktrace": test.get("trace"),
-                    "test_message": test.get("message"),
-                    "test_allure_id": test.get("allureId"),
-                }
-            )
+            metric: dict[str, Any] = {
+                "test_nodeid": test.get("name"),
+                "test_name": test.get("name", "").split("::")[-1],
+                "test_result": test.get("status", "other"),
+                "test_duration": test.get("duration", 0) / 1000,  # ms → seconds
+                "test_marks": test.get("marks", []),
+                "test_params": test.get("params", {}),
+                "test_stacktrace": test.get("trace"),
+                "test_message": test.get("message"),
+                "test_allure_id": test.get("allureId"),
+            }
+            logs = test.get("logs")
+            if logs is not None:
+                metric["test_logs"] = logs
+            metrics.append(metric)
         return {"metrics": metrics, "environment": environment}

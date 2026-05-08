@@ -54,6 +54,8 @@ def build_ctrf_report(
     }
     if pytest_summary:
         extra_section["pytestSummary"] = pytest_summary
+    if run.general_logs:
+        extra_section["generalLogs"] = [_format_log_entry(e) for e in run.general_logs]
 
     return {
         "results": {
@@ -96,5 +98,27 @@ def _format_test(result) -> dict[str, Any]:
         item["stdout"] = result.stdout
     if result.stderr is not None:
         item["stderr"] = result.stderr
+    if result.logs is not None:
+        logs_dict: dict[str, Any] = {}
+        if result.logs.setup:
+            logs_dict["setup"] = [_format_log_entry(e) for e in result.logs.setup]
+        if result.logs.call:
+            logs_dict["call"] = [_format_log_entry(e) for e in result.logs.call]
+        if result.logs.teardown:
+            logs_dict["teardown"] = [_format_log_entry(e) for e in result.logs.teardown]
+        if logs_dict:
+            item["logs"] = logs_dict
 
     return item
+
+
+def _format_log_entry(entry) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "level": entry.level,
+        "message": entry.message,
+    }
+    if entry.logger:
+        result["logger"] = entry.logger
+    if entry.timestamp is not None:
+        result["timestamp"] = entry.timestamp
+    return result

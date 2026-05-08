@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "pytest-beacon"
-version = "0.3.0"
+version = "0.4.0"
 description = "Highly customizable pytest reporting plugin combining AI-optimized CTRF reports and rich test metrics"
 readme = { file = "README.md", content-type = "text/markdown" }
 license = { file = "LICENSE" }
@@ -69,6 +69,7 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-p pytester"
 filterwarnings = ["ignore::pytest.PytestCollectionWarning"]
 
 [tool.uv]

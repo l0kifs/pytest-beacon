@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from pytest_beacon.domains.test_run.value_objects import TestStatus
+from pytest_beacon.domains.test_run.value_objects import LogEntry, TestLogs, TestStatus
 
 
 class TestResult(BaseModel):
@@ -28,6 +28,7 @@ class TestResult(BaseModel):
     allure_id: str | None = None
     stdout: str | None = None
     stderr: str | None = None
+    logs: TestLogs | None = None
 
 
 _SUMMARY_KEYS = ("passed", "failed", "skipped", "error", "other")
@@ -40,6 +41,7 @@ class TestRun:
         self.start_ms: int = int(time.time() * 1000)
         self.stop_ms: int = 0
         self._tests: list[TestResult] = []
+        self._general_logs: list[LogEntry] = []
         self._summary: dict[str, int] = {
             "tests": 0,
             "passed": 0,
@@ -58,6 +60,10 @@ class TestRun:
         """Record a test result and update summary counters."""
         self._update_summary(result.status)
         self._tests.append(result)
+
+    def add_general_logs(self, entries: list[LogEntry]) -> None:
+        """Append log entries captured outside of any test (e.g. collection phase)."""
+        self._general_logs.extend(entries)
 
     def update_summary_only(self, status: TestStatus) -> None:
         """Update summary counters without adding to tests list (for excluded statuses)."""
@@ -123,6 +129,10 @@ class TestRun:
     @property
     def tests(self) -> list[TestResult]:
         return self._tests
+
+    @property
+    def general_logs(self) -> list[LogEntry]:
+        return self._general_logs
 
     @property
     def summary(self) -> dict[str, int]:

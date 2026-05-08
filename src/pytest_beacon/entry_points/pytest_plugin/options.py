@@ -81,3 +81,35 @@ def add_options(parser: pytest.Parser) -> None:
             "Example: --beacon-meta build=123 --beacon-meta branch=main"
         ),
     )
+    group.addoption(
+        "--beacon-logs",
+        action="store_true",
+        default=False,
+        help=(
+            "Enable log capture in the report. "
+            "Logs are split by phase (setup, call, teardown) per test. "
+            "Logs captured outside tests (collection phase) are reported as general logs."
+        ),
+    )
+    group.addoption(
+        "--beacon-logs-level",
+        action="store",
+        default="WARNING",
+        metavar="LEVEL",
+        help=(
+            "Minimum log level to include in the report. "
+            "Valid values: DEBUG, INFO, WARNING, ERROR, CRITICAL. "
+            "Default: WARNING"
+        ),
+    )
+    group.addoption(
+        "--beacon-logs-max",
+        action="store",
+        default=None,
+        type=int,
+        metavar="N",
+        help=(
+            "Maximum number of log entries per phase category (setup, call, teardown) per test "
+            "and for general logs. Default: unlimited."
+        ),
+    )

@@ -229,6 +229,27 @@ class TestExtractMarks:
         item.iter_markers.side_effect = RuntimeError("boom")
         assert _extract_marks(item) == []
 
+    def test_duplicate_marks_are_deduplicated(self):
+        marks = []
+        for name in ("smoke", "slow", "smoke", "slow", "regression"):
+            m = MagicMock()
+            m.name = name
+            marks.append(m)
+        item = MagicMock()
+        item.iter_markers.return_value = marks
+        assert _extract_marks(item) == ["smoke", "slow", "regression"]
+
+    def test_case_sensitive_deduplication(self):
+        """Marks with different casing are treated as distinct marks."""
+        marks = []
+        for name in ("Smoke", "smoke", "SMOKE"):
+            m = MagicMock()
+            m.name = name
+            marks.append(m)
+        item = MagicMock()
+        item.iter_markers.return_value = marks
+        assert _extract_marks(item) == ["Smoke", "smoke", "SMOKE"]
+
 
 # ---------------------------------------------------------------------------
 # _extract_params

@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     # Application settings
     app_name: str = Field(default="pytest-beacon", description="Application name")
-    app_version: str = Field(default="0.3.0", description="Application version")
+    app_version: str = Field(default="0.4.0", description="Application version")
 
     # Plugin activation (can also be set via env var as fallback)
     generate_report: bool = Field(default=False, description="Enable beacon reporting (overridden by --beacon CLI flag)")
@@ -41,6 +41,14 @@ class Settings(BaseSettings):
     # HTTP export settings
     http_timeout: float = Field(default=10.0, description="HTTP export request timeout in seconds")
     http_max_retries: int = Field(default=3, description="HTTP export maximum retry attempts")
+
+    # Log capture settings
+    logs_enabled: bool = Field(default=False, description="Enable log capture in reports (--beacon-logs)")
+    logs_level: str = Field(default="WARNING", description="Minimum log level to capture (--beacon-logs-level)")
+    logs_max_per_category: int | None = Field(
+        default=None,
+        description="Max log entries per phase category per test and for general logs (--beacon-logs-max)",
+    )
 
 
 def get_settings() -> Settings:

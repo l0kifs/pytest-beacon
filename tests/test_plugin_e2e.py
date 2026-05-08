@@ -391,6 +391,23 @@ class TestTestMetadataCapture:
         marked = [t for t in tests if "smoke" in t.get("marks", [])]
         assert len(marked) == 1
 
+    def test_duplicate_marks_deduplicated_in_report(self, pytester):
+        """Marks inherited from class and module must not appear twice in the report."""
+        pytester.makepyfile("""
+            import pytest
+
+            @pytest.mark.smoke
+            class TestGroup:
+                @pytest.mark.smoke
+                def test_double_marked(self): pass
+        """)
+        pytester.runpytest("--beacon", "--beacon-file-exclude-status=")
+        data = _load_json_report(pytester)
+        tests = _results(data)["tests"]
+        assert len(tests) == 1
+        marks = tests[0].get("marks", [])
+        assert marks.count("smoke") == 1
+
     def test_allure_id_captured_from_mark_without_allure_plugin(self, pytester):
         """allureId is extracted from @pytest.mark.allure_id — allure-pytest not required."""
         pytester.makepyfile("""

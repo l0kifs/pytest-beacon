@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.0 - 2026-05-08
+
+### Features
+
+- Add opt-in log capture to CTRF reports and HTTP export via `--beacon-logs` flag.
+- Capture per-phase log entries (setup, call, teardown) for every test, stored under a `logs` key in the CTRF test entry and as `test_logs` in HTTP export metrics.
+- Capture collection-phase logs as `generalLogs` in the CTRF `results.extra` section.
+- Add `--beacon-logs-level` CLI option (and `PYTEST_BEACON__LOGS_LEVEL` env var) to set the minimum log level captured (default: `WARNING`).
+- Add `--beacon-logs-max` CLI option (and `PYTEST_BEACON__LOGS_MAX_PER_CATEGORY` env var) to cap the number of log entries per phase category (default: unlimited).
+- Full xdist compatibility: per-test logs are serialized by workers and reconstructed on the master node before export.
+
+### Tests
+
+- Add `tests/test_plugin_logs_e2e.py` with 49 end-to-end tests covering: opt-in behaviour, per-phase capture, level filtering, max-entries cap, general logs, status-exclusion interaction, edge cases, xdist, and HTTP export.
+
 ## 0.3.0 - 2026-04-17
 
 ### Features
