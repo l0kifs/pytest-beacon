@@ -92,5 +92,8 @@ class HttpExporter:
             logs = test.get("logs")
             if logs is not None:
                 metric["test_logs"] = logs
+            console_output = test.get("consoleOutput")
+            if console_output is not None:
+                metric["test_console_output"] = console_output
             metrics.append(metric)
         return {"metrics": metrics, "environment": environment}

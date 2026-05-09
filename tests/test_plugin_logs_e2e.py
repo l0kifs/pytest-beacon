@@ -16,9 +16,6 @@ Covers:
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
-import logging
-
-import pytest
 
 
 # ---------------------------------------------------------------------------
@@ -137,6 +134,39 @@ class TestLogsOptIn:
         assert call_logs
         assert "specific.logger" in call_logs[0].get("logger", "")
 
+    def test_stdlib_logs_captured_without_pytest_logging_plugin(self, pytester):
+        """Beacon captures stdlib logging directly, not only parsed pytest sections."""
+        pytester.makepyfile("""
+            import logging
+            def test_direct_stdlib():
+                logging.getLogger("direct.stdlib").warning("direct stdlib warning")
+        """)
+        pytester.runpytest("--beacon", "--beacon-logs", "--beacon-file-exclude-status=",
+                           "--beacon-logs-level=WARNING", "-p", "no:logging")
+        data = _load_json_report(pytester)
+        call_logs = _tests(data)[0].get("logs", {}).get("call", [])
+        assert call_logs
+        assert any("direct stdlib warning" in e["message"] for e in call_logs)
+        assert any(e.get("data", {}).get("lineno") for e in call_logs)
+
+    def test_loguru_logs_captured_when_console_output_disabled(self, pytester):
+        """Beacon captures Loguru records directly even when Loguru writes to a file."""
+        pytester.makepyfile("""
+            from loguru import logger
+            logger.remove()
+            logger.add("loguru-output.log", level="WARNING")
+
+            def test_direct_loguru():
+                logger.bind(trace_id="abc-123").warning("direct loguru warning")
+        """)
+        pytester.runpytest("--beacon", "--beacon-logs", "--beacon-file-exclude-status=",
+                           "--beacon-logs-level=WARNING")
+        data = _load_json_report(pytester)
+        call_logs = _tests(data)[0].get("logs", {}).get("call", [])
+        assert call_logs
+        entry = next(e for e in call_logs if "direct loguru warning" in e["message"])
+        assert entry["data"]["extra"]["trace_id"] == "abc-123"
+
 
 # ---------------------------------------------------------------------------
 # Per-phase capture
@@ -179,6 +209,36 @@ class TestPerPhaseLogCapture:
         assert "call" in logs
         messages = [e["message"] for e in logs["call"]]
         assert any("call warning" in m for m in messages)
+
+    def test_loguru_style_stdout_logs_captured(self, pytester):
+        """Loguru-style console lines emitted to stdout are captured as logs."""
+        pytester.makepyfile("""
+            def test_loguru_stdout():
+                print(
+                    "2026-05-08 15:00:00.123 | WARNING  | "
+                    "mercuryo_api_tests.tests.test_demo:test_loguru_stdout:3 - "
+                    "loguru warning from stdout"
+                )
+        """)
+        pytester.runpytest("--beacon", "--beacon-logs", "--beacon-file-exclude-status=",
+                           "--beacon-logs-level=WARNING")
+        data = _load_json_report(pytester)
+        call_logs = _tests(data)[0].get("logs", {}).get("call", [])
+        assert call_logs
+        assert call_logs[0]["level"] == "WARNING"
+        assert "mercuryo_api_tests.tests.test_demo" in call_logs[0]["logger"]
+        assert "loguru warning from stdout" in call_logs[0]["message"]
+
+    def test_regular_stdout_is_not_treated_as_logs(self, pytester):
+        """Non-log stdout lines must not create report log entries."""
+        pytester.makepyfile("""
+            def test_prints():
+                print("ordinary diagnostic output")
+        """)
+        pytester.runpytest("--beacon", "--beacon-logs", "--beacon-file-exclude-status=",
+                           "--beacon-logs-level=WARNING")
+        data = _load_json_report(pytester)
+        assert "logs" not in _tests(data)[0]
 
     def test_teardown_phase_logs_captured(self, pytester):
         """Logs emitted during fixture teardown go to 'teardown' key."""
@@ -438,8 +498,8 @@ class TestLogsMaxEntries:
             entries = logs.get(phase, [])
             assert len(entries) <= 3, f"{phase} exceeded max: {len(entries)}"
 
-    def test_max_one_keeps_first_entry(self, pytester):
-        """With --beacon-logs-max=1 only the first log entry is retained."""
+    def test_max_one_keeps_last_entry(self, pytester):
+        """With --beacon-logs-max=1 only the last log entry is retained."""
         pytester.makepyfile("""
             import logging
             def test_ordered():
@@ -453,7 +513,7 @@ class TestLogsMaxEntries:
         data = _load_json_report(pytester)
         call_logs = _tests(data)[0].get("logs", {}).get("call", [])
         assert len(call_logs) == 1
-        assert "first" in call_logs[0]["message"]
+        assert "third" in call_logs[0]["message"]
 
     def test_no_max_keeps_all_entries(self, pytester):
         """Without --beacon-logs-max all log entries are included."""
@@ -647,10 +707,10 @@ class TestLogsEdgeCases:
                 logging.getLogger("t").warning("warn msg")
         """)
         # NOTAREALEVEL is not a valid logging level → should fall back to WARNING
-        result = pytester.runpytest("--beacon", "--beacon-logs",
-                                    "--beacon-file-exclude-status=",
-                                    "--beacon-logs-level=NOTAREALEVEL",
-                                    "--log-cli-level=WARNING")
+        pytester.runpytest("--beacon", "--beacon-logs",
+                           "--beacon-file-exclude-status=",
+                           "--beacon-logs-level=NOTAREALEVEL",
+                           "--log-cli-level=WARNING")
         # Plugin must not crash pytest
         reports = list(pytester.path.glob("beacon_reports/*.json"))
         assert reports, "Report must be generated even with invalid level"

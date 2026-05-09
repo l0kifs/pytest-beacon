@@ -1,7 +1,7 @@
 """Unit tests for FileExporter and HttpExporter."""
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
@@ -217,6 +217,15 @@ class TestHttpExporterPayload:
                     "trace": "tb...",
                     "message": "boom",
                     "allureId": "TC-1",
+                    "consoleOutput": {
+                        "call": {
+                            "stdout": {
+                                "lines": ["line"],
+                                "truncated": False,
+                                "omittedLines": 0,
+                            }
+                        }
+                    },
                 }],
             }
         }
@@ -229,6 +238,7 @@ class TestHttpExporterPayload:
         assert metric["test_stacktrace"] == "tb..."
         assert metric["test_message"] == "boom"
         assert metric["test_allure_id"] == "TC-1"
+        assert metric["test_console_output"]["call"]["stdout"]["lines"] == ["line"]
 
     def test_empty_tests_list(self):
         report = {"results": {"summary": {}, "tests": []}}

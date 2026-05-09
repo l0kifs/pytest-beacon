@@ -7,7 +7,12 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from pytest_beacon.domains.test_run.value_objects import LogEntry, TestLogs, TestStatus
+from pytest_beacon.domains.test_run.value_objects import (
+    LogEntry,
+    TestConsoleOutput,
+    TestLogs,
+    TestStatus,
+)
 
 
 class TestResult(BaseModel):
@@ -29,6 +34,7 @@ class TestResult(BaseModel):
     stdout: str | None = None
     stderr: str | None = None
     logs: TestLogs | None = None
+    console_output: TestConsoleOutput | None = None
 
 
 _SUMMARY_KEYS = ("passed", "failed", "skipped", "error", "other")

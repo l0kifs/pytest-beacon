@@ -21,6 +21,7 @@
 - You run tests in parallel with `pytest-xdist` and need a unified report
 - You need collection errors (import errors, syntax errors) tracked alongside test results
 - You want captured log output split by test phase (setup / call / teardown) directly in the report
+- You want optional captured stdout/stderr in reports without mixing it into log records
 
 ---
 
@@ -33,7 +34,8 @@
 - **HTTP export**: POST reports to a remote metrics service after each run
 - **xdist support**: Full `pytest-xdist` compatibility for parallel execution
 - **Collection error tracking**: Import errors and syntax errors appear in the report
-- **Log capture**: Structured per-phase logs (setup / call / teardown) with level filtering and entry capping
+- **Direct log capture**: Structured per-phase stdlib logging and Loguru records with level filtering and entry capping
+- **Optional console output capture**: Captured stdout/stderr per phase, keeping the last N lines with truncation metadata
 - **Flexible configuration**: CLI flags, environment variables, and `.env` file support
 
 ## 🚀 Installation
@@ -92,6 +94,16 @@ pytest --beacon --beacon-logs
 pytest --beacon --beacon-logs --beacon-logs-level=DEBUG --beacon-logs-max=50
 ```
 
+**10. Capture stdout/stderr per test phase, keeping the last 50 lines**
+```bash
+pytest --beacon --beacon-console-output
+```
+
+**11. Capture stdout/stderr, keeping the last 20 lines per stream per phase**
+```bash
+pytest --beacon --beacon-console-output --beacon-console-lines=20
+```
+
 ## 🛠 CLI Options
 
 | Option | Default | Description |
@@ -104,9 +116,11 @@ pytest --beacon --beacon-logs --beacon-logs-level=DEBUG --beacon-logs-max=50
 | `--beacon-file-exclude-status STATUSES` | `passed` | Comma-separated statuses to omit from the **local file** report. Empty string includes all. |
 | `--beacon-http-exclude-status STATUSES` | `passed` | Comma-separated statuses to omit from the **HTTP export**. Empty string includes all. |
 | `--beacon-meta KEY=VALUE` | — | Arbitrary metadata pair added to the report environment. Repeatable. |
-| `--beacon-logs` | off | Enable log capture. Logs are split into setup / call / teardown phases per test. Logs from the collection phase appear as `generalLogs` in `extra`. |
+| `--beacon-logs` | off | Enable direct log capture. Stdlib logging and Loguru records are split into setup / call / teardown phases per test. Logs from the collection phase appear as `generalLogs` in `extra`. |
 | `--beacon-logs-level LEVEL` | `WARNING` | Minimum log level to include. Valid values: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. |
-| `--beacon-logs-max N` | unlimited | Maximum log entries per phase per test (and for general logs). Earlier entries are kept when the cap is reached. |
+| `--beacon-logs-max N` | unlimited | Maximum log entries per phase per test (and for general logs). The last entries are kept when the cap is reached. |
+| `--beacon-console-output` | off | Include captured stdout/stderr in `consoleOutput` per test and `test_console_output` in HTTP metrics. |
+| `--beacon-console-lines N` | `50` | Number of last stdout/stderr lines to keep per stream per phase. Includes truncation metadata when lines are omitted. |
 
 ### Environment Variables
 
@@ -122,6 +136,14 @@ All variables use the `PYTEST_BEACON__` prefix. Can also be set in a `.env` file
 | `PYTEST_BEACON__LOGS_ENABLED` | `false` | Enable log capture (equivalent to `--beacon-logs`) |
 | `PYTEST_BEACON__LOGS_LEVEL` | `WARNING` | Minimum log level to capture |
 | `PYTEST_BEACON__LOGS_MAX_PER_CATEGORY` | — | Max log entries per phase per test |
+| `PYTEST_BEACON__CONSOLE_OUTPUT_ENABLED` | `false` | Enable console output capture (equivalent to `--beacon-console-output`) |
+| `PYTEST_BEACON__CONSOLE_OUTPUT_LINES` | `50` | Number of last stdout/stderr lines to keep per stream per phase |
+
+### Logs vs Console Output
+
+`--beacon-logs` captures log records from the logging system itself. It does not depend on pytest's rendered log-line format, so changing console log formatting does not break log capture. Standard-library logging is captured directly, and Loguru is captured directly when Loguru is installed. Pytest captured-log sections are still used as a fallback.
+
+`--beacon-console-output` captures raw stdout/stderr separately. Plain `print()` output is stored under `consoleOutput`, not under `logs`.
 
 ## 📊 Report Format
 
@@ -170,11 +192,42 @@ Pytest:  79 failed, 759 passed, 123 skipped, 3 xfailed, 57 warnings, 12 errors, 
         "stderr": "",
         "logs": {
           "setup": [
-            { "level": "WARNING", "message": "slow fixture detected", "logger": "app.fixtures" }
+            {
+              "level": "WARNING",
+              "message": "slow fixture detected",
+              "logger": "app.fixtures",
+              "timestamp": "2026-05-08T10:00:00+00:00",
+              "data": {
+                "filename": "conftest.py",
+                "lineno": 12,
+                "extra": { "fixture": "admin_session" }
+              }
+            }
           ],
           "call": [
             { "level": "ERROR", "message": "unexpected response code 401", "logger": "app.api" }
           ]
+        },
+        "consoleOutput": {
+          "call": {
+            "stdout": {
+              "lines": ["request id: abc-123", "response code: 401"],
+              "truncated": false,
+              "omittedLines": 0
+            },
+            "stderr": {
+              "lines": ["retry exhausted"],
+              "truncated": false,
+              "omittedLines": 0
+            }
+          },
+          "teardown": {
+            "stdout": {
+              "lines": ["cleanup complete"],
+              "truncated": true,
+              "omittedLines": 3
+            }
+          }
         }
       }
     ],
@@ -187,7 +240,7 @@ Pytest:  79 failed, 759 passed, 123 skipped, 3 xfailed, 57 warnings, 12 errors, 
     },
     "extra": {
       "pluginName": "pytest-beacon",
-      "pluginVersion": "0.4.0",
+      "pluginVersion": "0.5.0",
       "ctrf": "1.0.0",
       "generatedAt": 1700000005000,
       "pytestSummary": {
@@ -278,11 +331,20 @@ Pytest:  79 failed, 759 passed, 123 skipped, 3 xfailed, 57 warnings, 12 errors, 
               "stderr":   { "type": "string", "description": "Captured stderr; present only with --beacon-verbose" },
               "logs": {
                 "type": "object",
-                "description": "Captured log entries grouped by phase; present only with --beacon-logs. Only non-empty phases are included.",
+                "description": "Captured stdlib logging / Loguru records grouped by phase; present only with --beacon-logs. Only non-empty phases are included.",
                 "properties": {
                   "setup":    { "$ref": "#/$defs/logEntryArray" },
                   "call":     { "$ref": "#/$defs/logEntryArray" },
                   "teardown": { "$ref": "#/$defs/logEntryArray" }
+                }
+              },
+              "consoleOutput": {
+                "type": "object",
+                "description": "Captured stdout/stderr grouped by phase; present only with --beacon-console-output. Only phases/streams with retained or truncated output are included.",
+                "properties": {
+                  "setup":    { "$ref": "#/$defs/consolePhaseOutput" },
+                  "call":     { "$ref": "#/$defs/consolePhaseOutput" },
+                  "teardown": { "$ref": "#/$defs/consolePhaseOutput" }
                 }
               }
             }
@@ -339,12 +401,29 @@ Pytest:  79 failed, 759 passed, 123 skipped, 3 xfailed, 57 warnings, 12 errors, 
         "level":     { "type": "string", "description": "Log level name, e.g. WARNING, ERROR" },
         "message":   { "type": "string", "description": "Formatted log message" },
         "logger":    { "type": "string", "description": "Logger name (dotted module path)" },
-        "timestamp": { "type": "string", "description": "ISO-8601 timestamp if available" }
+        "timestamp": { "type": "string", "description": "ISO-8601 timestamp if available" },
+        "data":      { "type": "object", "description": "Structured logging metadata captured from the underlying log record" }
       }
     },
     "logEntryArray": {
       "type": "array",
       "items": { "$ref": "#/$defs/logEntry" }
+    },
+    "consoleStream": {
+      "type": "object",
+      "required": ["lines", "truncated", "omittedLines"],
+      "properties": {
+        "lines":        { "type": "array", "items": { "type": "string" }, "description": "Retained output lines" },
+        "truncated":    { "type": "boolean", "description": "True when earlier lines were omitted" },
+        "omittedLines": { "type": "integer", "description": "Number of omitted earlier lines" }
+      }
+    },
+    "consolePhaseOutput": {
+      "type": "object",
+      "properties": {
+        "stdout": { "$ref": "#/$defs/consoleStream" },
+        "stderr": { "$ref": "#/$defs/consoleStream" }
+      }
     }
   }
 }
@@ -374,11 +453,31 @@ When `--beacon-url` is set, a POST request with a JSON body is sent to the speci
       "test_allure_id": "TC-42",
       "test_logs": {
         "setup": [
-          { "level": "WARNING", "message": "slow fixture detected", "logger": "app.fixtures" }
+          {
+            "level": "WARNING",
+            "message": "slow fixture detected",
+            "logger": "app.fixtures",
+            "timestamp": "2026-05-08T10:00:00+00:00",
+            "data": { "filename": "conftest.py", "lineno": 12 }
+          }
         ],
         "call": [
           { "level": "ERROR", "message": "unexpected response code 401", "logger": "app.api" }
         ]
+      },
+      "test_console_output": {
+        "call": {
+          "stdout": {
+            "lines": ["request id: abc-123", "response code: 401"],
+            "truncated": false,
+            "omittedLines": 0
+          },
+          "stderr": {
+            "lines": ["retry exhausted"],
+            "truncated": false,
+            "omittedLines": 0
+          }
+        }
       }
     }
   ],
@@ -422,11 +521,20 @@ When `--beacon-url` is set, a POST request with a JSON body is sent to the speci
           "test_allure_id": { "type": ["string", "null"], "description": "Value of the @allure.id marker" },
           "test_logs": {
             "type": "object",
-            "description": "Captured log entries grouped by phase; present only with --beacon-logs. Only non-empty phases are included.",
+            "description": "Captured stdlib logging / Loguru records grouped by phase; present only with --beacon-logs. Only non-empty phases are included.",
             "properties": {
               "setup":    { "$ref": "#/$defs/logEntryArray" },
               "call":     { "$ref": "#/$defs/logEntryArray" },
               "teardown": { "$ref": "#/$defs/logEntryArray" }
+            }
+          },
+          "test_console_output": {
+            "type": "object",
+            "description": "Captured stdout/stderr grouped by phase; present only with --beacon-console-output. Only phases/streams with retained or truncated output are included.",
+            "properties": {
+              "setup":    { "$ref": "#/$defs/consolePhaseOutput" },
+              "call":     { "$ref": "#/$defs/consolePhaseOutput" },
+              "teardown": { "$ref": "#/$defs/consolePhaseOutput" }
             }
           }
         }
@@ -451,12 +559,29 @@ When `--beacon-url` is set, a POST request with a JSON body is sent to the speci
         "level":     { "type": "string", "description": "Log level name, e.g. WARNING, ERROR" },
         "message":   { "type": "string", "description": "Formatted log message" },
         "logger":    { "type": "string", "description": "Logger name (dotted module path)" },
-        "timestamp": { "type": "string", "description": "ISO-8601 timestamp if available" }
+        "timestamp": { "type": "string", "description": "ISO-8601 timestamp if available" },
+        "data":      { "type": "object", "description": "Structured logging metadata captured from the underlying log record" }
       }
     },
     "logEntryArray": {
       "type": "array",
       "items": { "$ref": "#/$defs/logEntry" }
+    },
+    "consoleStream": {
+      "type": "object",
+      "required": ["lines", "truncated", "omittedLines"],
+      "properties": {
+        "lines":        { "type": "array", "items": { "type": "string" }, "description": "Retained output lines" },
+        "truncated":    { "type": "boolean", "description": "True when earlier lines were omitted" },
+        "omittedLines": { "type": "integer", "description": "Number of omitted earlier lines" }
+      }
+    },
+    "consolePhaseOutput": {
+      "type": "object",
+      "properties": {
+        "stdout": { "$ref": "#/$defs/consoleStream" },
+        "stderr": { "$ref": "#/$defs/consoleStream" }
+      }
     }
   }
 }

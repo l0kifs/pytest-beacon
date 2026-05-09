@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     # Application settings
     app_name: str = Field(default="pytest-beacon", description="Application name")
-    app_version: str = Field(default="0.4.0", description="Application version")
+    app_version: str = Field(default="0.5.0", description="Application version")
 
     # Plugin activation (can also be set via env var as fallback)
     generate_report: bool = Field(default=False, description="Enable beacon reporting (overridden by --beacon CLI flag)")
@@ -48,6 +48,16 @@ class Settings(BaseSettings):
     logs_max_per_category: int | None = Field(
         default=None,
         description="Max log entries per phase category per test and for general logs (--beacon-logs-max)",
+    )
+
+    # Console output capture settings
+    console_output_enabled: bool = Field(
+        default=False,
+        description="Enable captured stdout/stderr in reports (--beacon-console-output)",
+    )
+    console_output_lines: int = Field(
+        default=50,
+        description="Number of last stdout/stderr lines to keep per phase per test (--beacon-console-lines)",
     )
 
 

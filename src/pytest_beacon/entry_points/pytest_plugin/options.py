@@ -113,3 +113,23 @@ def add_options(parser: pytest.Parser) -> None:
             "and for general logs. Default: unlimited."
         ),
     )
+    group.addoption(
+        "--beacon-console-output",
+        action="store_true",
+        default=False,
+        help=(
+            "Include captured stdout/stderr in the report. "
+            "Console output is split by phase (setup, call, teardown) per test."
+        ),
+    )
+    group.addoption(
+        "--beacon-console-lines",
+        action="store",
+        default=50,
+        type=int,
+        metavar="N",
+        help=(
+            "Number of last stdout/stderr lines to keep per phase per test "
+            "when --beacon-console-output is enabled. Default: 50."
+        ),
+    )

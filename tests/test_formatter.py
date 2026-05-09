@@ -1,11 +1,16 @@
 """Unit tests for the CTRF 1.0.0 formatter."""
 import sys
 
-import pytest as _pytest
-
 from pytest_beacon.config.settings import get_settings
 from pytest_beacon.domains.test_run.entities import TestResult, TestRun
-from pytest_beacon.domains.test_run.value_objects import TestStatus
+from pytest_beacon.domains.test_run.value_objects import (
+    ConsolePhaseOutput,
+    ConsoleStream,
+    LogEntry,
+    TestConsoleOutput,
+    TestLogs,
+    TestStatus,
+)
 from pytest_beacon.infrastructure.formatters.ctrf import _format_test, build_ctrf_report
 
 
@@ -244,6 +249,42 @@ class TestFormatTest:
         item = _format_test(r)
         assert item["stdout"] == "hello\n"
         assert item["stderr"] == "err\n"
+
+    def test_logs_include_record_data(self):
+        r = _make(
+            TestStatus.PASSED,
+            logs=TestLogs(
+                call=[
+                    LogEntry(
+                        level="WARNING",
+                        message="warn",
+                        logger="app",
+                        data={"extra": {"trace_id": "abc"}},
+                    )
+                ]
+            ),
+        )
+        item = _format_test(r)
+        assert item["logs"]["call"][0]["data"]["extra"]["trace_id"] == "abc"
+
+    def test_console_output_included_with_truncation_metadata(self):
+        r = _make(
+            TestStatus.PASSED,
+            console_output=TestConsoleOutput(
+                call=ConsolePhaseOutput(
+                    stdout=ConsoleStream(
+                        lines=["line 2"],
+                        truncated=True,
+                        omitted_lines=1,
+                    )
+                )
+            ),
+        )
+        item = _format_test(r)
+        stdout = item["consoleOutput"]["call"]["stdout"]
+        assert stdout["lines"] == ["line 2"]
+        assert stdout["truncated"] is True
+        assert stdout["omittedLines"] == 1
 
     def test_status_is_string_value(self):
         r = _make(TestStatus.SKIPPED)

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import re
+from importlib import import_module
 from datetime import datetime, timezone
 from typing import Any
 
@@ -17,7 +18,14 @@ import pytest
 
 from pytest_beacon.config.settings import get_settings
 from pytest_beacon.domains.test_run.entities import TestResult, TestRun
-from pytest_beacon.domains.test_run.value_objects import LogEntry, TestLogs, TestStatus
+from pytest_beacon.domains.test_run.value_objects import (
+    ConsolePhaseOutput,
+    ConsoleStream,
+    LogEntry,
+    TestConsoleOutput,
+    TestLogs,
+    TestStatus,
+)
 from pytest_beacon.entry_points.pytest_plugin import options as _options
 from pytest_beacon.entry_points.pytest_plugin import xdist as _xdist
 from pytest_beacon.infrastructure.exporters.file_exporter import FileExporter
@@ -90,12 +98,36 @@ class BeaconPlugin:
         )
         # Accumulates per-phase log entries keyed by nodeid then phase name
         self._pending_logs: dict[str, dict[str, list[LogEntry]]] = {}
+        self._pending_console: dict[str, dict[str, ConsolePhaseOutput]] = {}
+        self._active_nodeid: str | None = None
+        self._active_phase: str | None = None
+        self._stdlib_log_handler: _DirectLogHandler | None = None
+        self._loguru_sink_id: int | None = None
+        self._loguru_logger: Any | None = None
+
+        self._console_enabled: bool = config.getoption(
+            "--beacon-console-output", default=self._settings.console_output_enabled
+        )
+        self._console_lines: int = max(
+            0,
+            int(
+                config.getoption(
+                    "--beacon-console-lines",
+                    default=self._settings.console_output_lines,
+                )
+            ),
+        )
 
         # Handler installed on the root logger during the collection phase
         self._collection_log_handler: _CollectionLogHandler | None = None
         if self._logs_enabled:
             self._collection_log_handler = _CollectionLogHandler(self._logs_min_level)
             logging.root.addHandler(self._collection_log_handler)
+            self._stdlib_log_handler = _DirectLogHandler(
+                self._logs_min_level,
+                self._capture_direct_log_record,
+            )
+            logging.root.addHandler(self._stdlib_log_handler)
 
         log.debug(
             "beacon: plugin initialised",
@@ -119,18 +151,41 @@ class BeaconPlugin:
         records = self._collection_log_handler.records
         self._collection_log_handler = None
         entries: list[LogEntry] = [
-            LogEntry(
-                level=r.levelname,
-                message=r.getMessage(),
-                logger=r.name,
-                timestamp=datetime.fromtimestamp(r.created, tz=timezone.utc).isoformat(),
-            )
+            _log_entry_from_stdlib_record(r)
             for r in records
         ]
         if self._logs_max_per_category is not None:
-            entries = entries[: self._logs_max_per_category]
+            entries = (
+                entries[-self._logs_max_per_category :]
+                if self._logs_max_per_category > 0
+                else []
+            )
         if entries:
             self._run.add_general_logs(entries)
+
+    @pytest.hookimpl(hookwrapper=True)
+    def pytest_runtest_setup(self, item: pytest.Item) -> Any:
+        self._enter_test_phase(item, "setup")
+        try:
+            yield
+        finally:
+            self._leave_test_phase()
+
+    @pytest.hookimpl(hookwrapper=True)
+    def pytest_runtest_call(self, item: pytest.Item) -> Any:
+        self._enter_test_phase(item, "call")
+        try:
+            yield
+        finally:
+            self._leave_test_phase()
+
+    @pytest.hookimpl(hookwrapper=True)
+    def pytest_runtest_teardown(self, item: pytest.Item) -> Any:
+        self._enter_test_phase(item, "teardown")
+        try:
+            yield
+        finally:
+            self._leave_test_phase()
 
     @pytest.hookimpl
     def pytest_collectreport(self, report: pytest.CollectReport) -> None:
@@ -184,13 +239,24 @@ class BeaconPlugin:
         try:
             # Always capture logs for this phase if log capture is enabled
             if self._logs_enabled and report.when in ("setup", "call", "teardown"):
-                phase_logs = _parse_log_section_from_sections(
+                parsed_logs = _parse_log_sections_from_sections(
                     getattr(report, "sections", []),
                     report.when,
                     self._logs_min_level,
                     self._logs_max_per_category,
                 )
+                direct_logs = self._pending_logs.get(item.nodeid, {}).get(
+                    report.when, []
+                )
+                phase_logs = _merge_log_entries(
+                    direct_logs, parsed_logs, self._logs_max_per_category
+                )
                 self._pending_logs.setdefault(item.nodeid, {})[report.when] = phase_logs
+
+            if self._console_enabled and report.when in ("setup", "call", "teardown"):
+                self._pending_console.setdefault(item.nodeid, {})[
+                    report.when
+                ] = _extract_console_output(report, self._console_lines)
 
             should_process = (
                 report.when == "call"
@@ -213,24 +279,30 @@ class BeaconPlugin:
 
             # For a successful teardown, patch teardown logs onto the already-stored result
             if (
-                self._logs_enabled
+                (self._logs_enabled or self._console_enabled)
                 and report.when == "teardown"
                 and not should_process
             ):
                 index = self._result_indexes.get(item.nodeid)
                 if index is not None and index < len(self._run._tests):
                     stored = self._run._tests[index]
+                    update: dict[str, Any] = {}
                     if stored.logs is not None:
                         teardown_logs = (
                             self._pending_logs.get(item.nodeid, {}).get("teardown", [])
                         )
-                        self._run._tests[index] = stored.model_copy(
-                            update={
-                                "logs": stored.logs.model_copy(
-                                    update={"teardown": teardown_logs}
-                                )
-                            }
+                        update["logs"] = stored.logs.model_copy(
+                            update={"teardown": teardown_logs}
                         )
+                    if stored.console_output is not None:
+                        teardown_console = self._pending_console.get(
+                            item.nodeid, {}
+                        ).get("teardown")
+                        update["console_output"] = stored.console_output.model_copy(
+                            update={"teardown": teardown_console}
+                        )
+                    if update:
+                        self._run._tests[index] = stored.model_copy(update=update)
 
             if not (should_process and (is_new or is_teardown_override)):
                 return
@@ -290,6 +362,13 @@ class BeaconPlugin:
                     setup=pending.get("setup", []),
                     call=pending.get("call", []),
                     teardown=pending.get("teardown", []),
+                )
+            if self._console_enabled:
+                pending_console = self._pending_console.get(item.nodeid, {})
+                result.console_output = TestConsoleOutput(
+                    setup=pending_console.get("setup"),
+                    call=pending_console.get("call"),
+                    teardown=pending_console.get("teardown"),
                 )
 
             self._store_result(item.nodeid, result)
@@ -370,6 +449,89 @@ class BeaconPlugin:
 
         except Exception:
             log.exception("beacon: error in pytest_sessionfinish")
+
+    def pytest_unconfigure(self, config: pytest.Config) -> None:  # noqa: ARG002
+        """Remove logging hooks installed by the plugin."""
+        if self._stdlib_log_handler is not None:
+            try:
+                logging.root.removeHandler(self._stdlib_log_handler)
+            except Exception:
+                pass
+            self._stdlib_log_handler = None
+        self._remove_loguru_sink()
+
+    def _enter_test_phase(self, item: pytest.Item, phase: str) -> None:
+        self._active_nodeid = item.nodeid
+        self._active_phase = phase
+        if self._logs_enabled:
+            self._install_loguru_sink()
+
+    def _leave_test_phase(self) -> None:
+        if self._logs_enabled:
+            self._remove_loguru_sink()
+        self._active_nodeid = None
+        self._active_phase = None
+
+    def _capture_direct_log_record(self, record: logging.LogRecord) -> None:
+        if (
+            not self._logs_enabled
+            or self._active_nodeid is None
+            or self._active_phase is None
+        ):
+            return
+        if record.name.startswith("pytest_beacon"):
+            return
+        self._pending_logs.setdefault(self._active_nodeid, {}).setdefault(
+            self._active_phase, []
+        ).append(_log_entry_from_stdlib_record(record))
+
+    def _capture_loguru_message(self, message: Any) -> None:
+        if (
+            not self._logs_enabled
+            or self._active_nodeid is None
+            or self._active_phase is None
+        ):
+            return
+        record = getattr(message, "record", None)
+        if not isinstance(record, dict):
+            return
+        level = record.get("level")
+        level_name = getattr(level, "name", str(level))
+        level_no = getattr(level, "no", _LOGURU_LEVELS.get(level_name, 0))
+        if level_no < self._logs_min_level:
+            return
+        self._pending_logs.setdefault(self._active_nodeid, {}).setdefault(
+            self._active_phase, []
+        ).append(_log_entry_from_loguru_record(record))
+
+    def _install_loguru_sink(self) -> None:
+        if self._loguru_sink_id is not None:
+            return
+        try:
+            loguru_logger = import_module("loguru").logger
+        except Exception:
+            return
+        try:
+            self._loguru_logger = loguru_logger
+            self._loguru_sink_id = loguru_logger.add(
+                self._capture_loguru_message,
+                level=0,
+                enqueue=False,
+                catch=True,
+            )
+        except Exception:
+            self._loguru_sink_id = None
+            self._loguru_logger = None
+
+    def _remove_loguru_sink(self) -> None:
+        if self._loguru_logger is None or self._loguru_sink_id is None:
+            return
+        try:
+            self._loguru_logger.remove(self._loguru_sink_id)
+        except Exception:
+            pass
+        self._loguru_sink_id = None
+        self._loguru_logger = None
 
     def _record_fallback_from_call(
         self,
@@ -678,6 +840,17 @@ class _CollectionLogHandler(logging.Handler):
         self.records.append(record)
 
 
+class _DirectLogHandler(logging.Handler):
+    """Forwards stdlib log records emitted during an active test phase."""
+
+    def __init__(self, min_level: int, callback: Any) -> None:
+        super().__init__(level=min_level)
+        self._callback = callback
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self._callback(record)
+
+
 # ---------------------------------------------------------------------------
 # Log capture helpers
 # ---------------------------------------------------------------------------
@@ -693,27 +866,71 @@ _LOG_LINE_RE = re.compile(
     r"(?P<message>.*)$"
 )
 
-_PHASE_SECTION_TITLES = {
+_PHASE_LOG_SECTION_TITLES = {
     "setup": "captured log setup",
     "call": "captured log call",
     "teardown": "captured log teardown",
 }
 
+_PHASE_STREAM_SECTION_TITLES = {
+    "setup": ("captured stdout setup", "captured stderr setup"),
+    "call": ("captured stdout call", "captured stderr call"),
+    "teardown": ("captured stdout teardown", "captured stderr teardown"),
+}
 
-def _parse_log_section_from_sections(
+_ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
+# Matches loguru's common console shape used by qa_tests:
+# 2026-05-08 15:00:00.123 | WARNING  | package.module:function:42 - message
+_LOGURU_LINE_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}\s+"
+    r"\d{2}:\d{2}:\d{2}(?:\.\d+)?\s+\|\s+"
+    r"(?P<level>[A-Z]+)\s+\|\s+"
+    r"(?P<logger>.*?)\s+-\s+"
+    r"(?P<message>.*)$"
+)
+
+_LOGURU_LEVELS = {
+    "TRACE": 5,
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "SUCCESS": 25,
+    "WARNING": logging.WARNING,
+    "ERROR": logging.ERROR,
+    "CRITICAL": logging.CRITICAL,
+}
+
+_STDLIB_LOG_RECORD_BUILTINS = set(logging.makeLogRecord({}).__dict__)
+
+
+def _parse_log_sections_from_sections(
     sections: list[tuple[str, str]],
     phase: str,
     min_level: int,
     max_entries: int | None,
 ) -> list[LogEntry]:
-    """Extract and parse log entries from pytest report sections for the given *phase*."""
+    """Extract log entries from pytest report sections for the given *phase*.
+
+    Pytest stores stdlib logging in "Captured log ..." sections, while projects
+    using loguru often emit formatted log lines to stdout/stderr. Capture both
+    shapes and leave unrelated print output alone.
+    """
+    entries: list[LogEntry] = []
+    expected_log = _PHASE_LOG_SECTION_TITLES.get(phase, "")
+    expected_streams = _PHASE_STREAM_SECTION_TITLES.get(phase, ())
+
     for title, content in sections:
         if not content:
             continue
-        expected = _PHASE_SECTION_TITLES.get(phase, "")
-        if expected and title.lower() == expected:
-            return _parse_log_text(content, min_level, max_entries)
-    return []
+        title_lower = title.lower()
+        if expected_log and title_lower == expected_log:
+            entries.extend(_parse_log_text(content, min_level, None))
+        elif title_lower in expected_streams:
+            entries.extend(_parse_stream_log_text(content, min_level, None))
+
+    if max_entries is not None:
+        entries = entries[-max_entries:] if max_entries > 0 else []
+    return entries
 
 
 def _parse_log_text(
@@ -743,5 +960,189 @@ def _parse_log_text(
             )
         )
     if max_entries is not None:
-        entries = entries[:max_entries]
+        entries = entries[-max_entries:] if max_entries > 0 else []
     return entries
+
+
+def _parse_stream_log_text(
+    text: str, min_level: int, max_entries: int | None
+) -> list[LogEntry]:
+    """Parse log-like lines from captured stdout/stderr text."""
+    entries: list[LogEntry] = []
+    for line in text.splitlines():
+        stripped = _ANSI_RE.sub("", line).rstrip()
+        if not stripped:
+            continue
+        m = _LOGURU_LINE_RE.match(stripped)
+        if not m:
+            continue
+        level = m.group("level")
+        numeric_level = _LOGURU_LEVELS.get(level)
+        if numeric_level is None or numeric_level < min_level:
+            continue
+        entries.append(
+            LogEntry(
+                level=level,
+                message=m.group("message").strip(),
+                logger=m.group("logger").strip(),
+            )
+        )
+    if max_entries is not None:
+        entries = entries[-max_entries:] if max_entries > 0 else []
+    return entries
+
+
+def _merge_log_entries(
+    direct_logs: list[LogEntry],
+    parsed_logs: list[LogEntry],
+    max_entries: int | None,
+) -> list[LogEntry]:
+    """Merge direct and parsed log entries, keeping direct records authoritative."""
+    result = list(direct_logs)
+    seen = {_log_identity(entry) for entry in result}
+    direct_messages = {(entry.level, entry.message) for entry in result}
+    for entry in parsed_logs:
+        if (entry.level, entry.message) in direct_messages:
+            continue
+        identity = _log_identity(entry)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        result.append(entry)
+    if max_entries is not None:
+        result = result[-max_entries:] if max_entries > 0 else []
+    return result
+
+
+def _log_identity(entry: LogEntry) -> tuple[str, str, str]:
+    return (entry.level, entry.logger, entry.message)
+
+
+def _log_entry_from_stdlib_record(record: logging.LogRecord) -> LogEntry:
+    data = {
+        "name": record.name,
+        "pathname": record.pathname,
+        "filename": record.filename,
+        "module": record.module,
+        "lineno": record.lineno,
+        "funcName": record.funcName,
+        "process": record.process,
+        "processName": record.processName,
+        "thread": record.thread,
+        "threadName": record.threadName,
+        "created": record.created,
+        "msecs": record.msecs,
+        "relativeCreated": record.relativeCreated,
+        "levelno": record.levelno,
+        "excInfo": _safe_string(record.exc_info) if record.exc_info else None,
+        "stackInfo": record.stack_info,
+        "extra": {
+            key: _json_safe(value)
+            for key, value in record.__dict__.items()
+            if key not in _STDLIB_LOG_RECORD_BUILTINS
+        },
+    }
+    return LogEntry(
+        level=record.levelname,
+        message=record.getMessage(),
+        logger=record.name,
+        timestamp=datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+        data={key: value for key, value in data.items() if value not in (None, {})},
+    )
+
+
+def _log_entry_from_loguru_record(record: dict[str, Any]) -> LogEntry:
+    level = record.get("level")
+    time_value = record.get("time")
+    file_value = record.get("file")
+    process_value = record.get("process")
+    thread_value = record.get("thread")
+    exception_value = record.get("exception")
+    data = {
+        "name": record.get("name"),
+        "function": record.get("function"),
+        "module": record.get("module"),
+        "line": record.get("line"),
+        "file": _object_attrs(file_value, ("name", "path")),
+        "process": _object_attrs(process_value, ("id", "name")),
+        "thread": _object_attrs(thread_value, ("id", "name")),
+        "level": _object_attrs(level, ("name", "no", "icon")),
+        "elapsed": _safe_string(record.get("elapsed")),
+        "exception": _safe_string(exception_value) if exception_value else None,
+        "extra": _json_safe(record.get("extra", {})),
+    }
+    timestamp = time_value.isoformat() if hasattr(time_value, "isoformat") else None
+    return LogEntry(
+        level=getattr(level, "name", str(level)),
+        message=str(record.get("message", "")),
+        logger=str(record.get("name") or ""),
+        timestamp=timestamp,
+        data={key: value for key, value in data.items() if value not in (None, {})},
+    )
+
+
+def _object_attrs(value: Any, attrs: tuple[str, ...]) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    result = {
+        attr: _json_safe(getattr(value, attr))
+        for attr in attrs
+        if hasattr(value, attr)
+    }
+    return result or None
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, (str, int, float, bool, type(None))):
+        return value
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if hasattr(value, "isoformat"):
+        try:
+            return value.isoformat()
+        except Exception:
+            pass
+    return _safe_string(value)
+
+
+def _safe_string(value: Any) -> str:
+    try:
+        return str(value)
+    except Exception:
+        return repr(value)
+
+
+def _extract_console_output(report: pytest.TestReport, line_limit: int) -> ConsolePhaseOutput:
+    phase = getattr(report, "when", "")
+    stdout = _extract_stream_output(getattr(report, "sections", []), phase, "stdout", line_limit)
+    stderr = _extract_stream_output(getattr(report, "sections", []), phase, "stderr", line_limit)
+    return ConsolePhaseOutput(stdout=stdout, stderr=stderr)
+
+
+def _extract_stream_output(
+    sections: list[tuple[str, str]],
+    phase: str,
+    stream_name: str,
+    line_limit: int,
+) -> ConsoleStream | None:
+    expected = f"captured {stream_name} {phase}"
+    content_parts = [
+        content
+        for title, content in sections
+        if title.lower() == expected and content
+    ]
+    if not content_parts:
+        return None
+    lines = "\n".join(content_parts).splitlines()
+    omitted = max(0, len(lines) - line_limit)
+    if line_limit <= 0:
+        retained: list[str] = []
+    else:
+        retained = lines[-line_limit:]
+    return ConsoleStream(
+        lines=retained,
+        truncated=omitted > 0,
+        omitted_lines=omitted,
+    )

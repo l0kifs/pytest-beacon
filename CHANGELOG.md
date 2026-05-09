@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.5.0 - 2026-05-09
+
+### Features
+
+- Add opt-in console output capture via `--beacon-console-output`.
+- Add `--beacon-console-lines` CLI option and `PYTEST_BEACON__CONSOLE_OUTPUT_LINES` env var to keep the last N stdout/stderr lines per stream per phase.
+- Store captured console output separately from logs under `consoleOutput` in CTRF reports and `test_console_output` in HTTP export metrics.
+- Include console truncation metadata with `truncated` and `omittedLines` fields.
+- Capture stdlib logging directly from the logging system instead of relying on rendered pytest log sections.
+- Capture Loguru records directly when Loguru is installed, including structured `extra` metadata.
+- Add structured log record metadata under each log entry's `data` field.
+- Change `--beacon-logs-max` behavior to keep the last N log entries per phase.
+
+### Documentation
+
+- Document direct log capture, console output capture, new CLI options, new env vars, CTRF fields, and HTTP payload fields in `README.md`.
+
+### Tests
+
+- Add dedicated console output e2e coverage in `tests/test_plugin_console_output_e2e.py`.
+- Add real Loguru integration coverage by including Loguru in dev dependencies.
+- Extend formatter and HTTP exporter tests for log metadata and console output fields.
+
 ## 0.4.0 - 2026-05-08
 
 ### Features

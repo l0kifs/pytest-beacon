@@ -10,7 +10,6 @@ from typing import Any
 import pytest
 
 from pytest_beacon.domains.test_run.entities import TestRun
-from pytest_beacon.domains.test_run.value_objects import TestStatus
 
 
 def build_ctrf_report(
@@ -108,6 +107,10 @@ def _format_test(result) -> dict[str, Any]:
             logs_dict["teardown"] = [_format_log_entry(e) for e in result.logs.teardown]
         if logs_dict:
             item["logs"] = logs_dict
+    if result.console_output is not None:
+        console_dict = _format_console_output(result.console_output)
+        if console_dict:
+            item["consoleOutput"] = console_dict
 
     return item
 
@@ -121,4 +124,27 @@ def _format_log_entry(entry) -> dict[str, Any]:
         result["logger"] = entry.logger
     if entry.timestamp is not None:
         result["timestamp"] = entry.timestamp
+    if entry.data:
+        result["data"] = entry.data
+    return result
+
+
+def _format_console_output(output) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for phase in ("setup", "call", "teardown"):
+        phase_output = getattr(output, phase, None)
+        if phase_output is None:
+            continue
+        phase_dict: dict[str, Any] = {}
+        for stream_name in ("stdout", "stderr"):
+            stream = getattr(phase_output, stream_name, None)
+            if stream is None or (not stream.lines and not stream.truncated):
+                continue
+            phase_dict[stream_name] = {
+                "lines": stream.lines,
+                "truncated": stream.truncated,
+                "omittedLines": stream.omitted_lines,
+            }
+        if phase_dict:
+            result[phase] = phase_dict
     return result
