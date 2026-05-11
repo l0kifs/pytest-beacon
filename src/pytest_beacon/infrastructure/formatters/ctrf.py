@@ -71,62 +71,53 @@ def build_ctrf_report(
 
 
 def _format_test(result) -> dict[str, Any]:
-    item: dict[str, Any] = {
-        "name": result.nodeid,
-        "status": result.status.value,
-        "duration": result.duration_ms,
-    }
-
-    if result.file_path is not None:
-        item["filePath"] = result.file_path
-    if result.line is not None:
-        item["line"] = result.line
-    if result.message is not None:
-        item["message"] = result.message
-    if result.trace is not None:
-        item["trace"] = result.trace
-    if result.failure_location is not None:
-        item["failureLocation"] = result.failure_location
-    if result.marks:
-        item["marks"] = result.marks
-    if result.params:
-        item["params"] = result.params
-    if result.allure_id is not None:
-        item["allureId"] = result.allure_id
-    if result.stdout is not None:
-        item["stdout"] = result.stdout
-    if result.stderr is not None:
-        item["stderr"] = result.stderr
+    # All fields are always emitted (null when absent) so that arrays of test
+    # objects have uniform keys and TOON can use tabular encoding.
+    logs_dict: dict[str, Any] | None = None
     if result.logs is not None:
-        logs_dict: dict[str, Any] = {}
+        logs_dict = {}
         if result.logs.setup:
             logs_dict["setup"] = [_format_log_entry(e) for e in result.logs.setup]
         if result.logs.call:
             logs_dict["call"] = [_format_log_entry(e) for e in result.logs.call]
         if result.logs.teardown:
             logs_dict["teardown"] = [_format_log_entry(e) for e in result.logs.teardown]
-        if logs_dict:
-            item["logs"] = logs_dict
-    if result.console_output is not None:
-        console_dict = _format_console_output(result.console_output)
-        if console_dict:
-            item["consoleOutput"] = console_dict
+        if not logs_dict:
+            logs_dict = None
 
-    return item
+    console_dict: dict[str, Any] | None = None
+    if result.console_output is not None:
+        console_dict = _format_console_output(result.console_output) or None
+
+    return {
+        "name": result.nodeid,
+        "status": result.status.value,
+        "duration": result.duration_ms,
+        "filePath": result.file_path,
+        "line": result.line,
+        "message": result.message,
+        "trace": result.trace,
+        "failureLocation": result.failure_location if hasattr(result, 'failure_location') else None,
+        "marks": result.marks if result.marks else None,
+        "params": [{"key": k, "value": str(v)} for k, v in result.params.items()] if result.params else None,
+        "allureId": int(result.allure_id) if (hasattr(result, 'allure_id') and result.allure_id is not None and str(result.allure_id).isdigit()) else (result.allure_id if hasattr(result, 'allure_id') else None),
+        "stdout": result.stdout if hasattr(result, 'stdout') else None,
+        "stderr": result.stderr if hasattr(result, 'stderr') else None,
+        "logs": logs_dict,
+        "consoleOutput": console_dict,
+    }
 
 
 def _format_log_entry(entry) -> dict[str, Any]:
-    result: dict[str, Any] = {
+    # All fields always emitted so arrays of log entries are uniform and TOON
+    # can use tabular encoding.
+    return {
         "level": entry.level,
         "message": entry.message,
+        "logger": entry.logger if entry.logger else None,
+        "timestamp": entry.timestamp,
+        "data": entry.data if entry.data else None,
     }
-    if entry.logger:
-        result["logger"] = entry.logger
-    if entry.timestamp is not None:
-        result["timestamp"] = entry.timestamp
-    if entry.data:
-        result["data"] = entry.data
-    return result
 
 
 def _format_console_output(output) -> dict[str, Any]:

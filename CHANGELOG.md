@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.0 - 2026-05-11
+
+### Features
+
+- Add TOON (Token-Oriented Object Notation) report format (`--beacon-format=toon`). TOON is a compact, indentation-based encoding optimised for LLM token efficiency, producing ~18% fewer tokens than compact JSON for typical reports.
+- JSON report files are now written in compact format (no indentation) to reduce file size.
+
+### Breaking Changes
+
+- `params` field in CTRF report changed from an object `{"key": "value"}` to an array of `{"key": …, "value": …}` pairs. This gives all test objects a uniform schema, enabling tabular encoding in TOON.
+- `allureId` is now stored as an integer when its value is all-digit (e.g. `42` instead of `"42"`). String values are preserved as-is.
+- All optional test-level fields (`filePath`, `line`, `message`, `trace`, `failureLocation`, `marks`, `params`, `allureId`, `stdout`, `stderr`, `logs`, `consoleOutput`) are now always emitted with `null` when absent, instead of being omitted entirely.
+- All optional log entry fields (`logger`, `timestamp`, `data`) are now always emitted with `null` when absent.
+
+### Documentation
+
+- Document TOON format in `README.md`: added example report, full structural schema, and format syntax reference.
+- Update CTRF JSON report schema and examples to reflect new `params` and `allureId` types.
+- Update CLI options table to include `toon` as a valid `--beacon-format` value.
+
 ## 0.5.0 - 2026-05-09
 
 ### Features

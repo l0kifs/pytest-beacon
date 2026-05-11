@@ -327,7 +327,7 @@ class TestVerboseMode:
         data = _load_json_report(pytester)
         tests = _results(data)["tests"]
         passed = [t for t in tests if t["status"] == "passed"]
-        assert "stdout" not in (passed[0] if passed else {})
+        assert passed[0].get("stdout") is None
 
 
 # ---------------------------------------------------------------------------
@@ -421,12 +421,12 @@ class TestTestMetadataCapture:
         assert tests[0].get("allureId") == "TC-42"
 
     def test_allure_id_absent_when_no_mark(self, pytester):
-        """allureId must not appear in the report when no allure mark is used."""
+        """allureId must be null in the report when no allure mark is used."""
         pytester.makepyfile("def test_plain(): pass")
         pytester.runpytest("--beacon", "--beacon-file-exclude-status=")
         data = _load_json_report(pytester)
         tests = _results(data)["tests"]
-        assert "allureId" not in tests[0]
+        assert tests[0].get("allureId") is None
 
     def test_parametrized_params_captured(self, pytester):
         pytester.makepyfile("""
@@ -439,9 +439,10 @@ class TestTestMetadataCapture:
         tests = _results(data)["tests"]
         assert len(tests) == 2
         for t in tests:
-            assert "params" in t
-            assert "x" in t["params"]
-            assert "y" in t["params"]
+            assert t["params"] is not None
+            keys = {p["key"] for p in t["params"]}
+            assert "x" in keys
+            assert "y" in keys
 
 
 # ---------------------------------------------------------------------------

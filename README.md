@@ -11,12 +11,13 @@
 
 </div>
 
-**Pytest Beacon** is a highly customizable pytest reporting plugin. Generates [CTRF](https://ctrf.io) 1.0.0 reports with rich test metadata — marks, parameters, Allure IDs, environment — and exports them to a local file and/or a remote HTTP service.
+**Pytest Beacon** is a highly customizable pytest reporting plugin. Generates [CTRF](https://ctrf.io) 1.0.0 reports with rich test metadata — marks, parameters, Allure IDs, environment — and exports them to a local file and/or a remote HTTP service. Reports can be serialised as JSON, YAML, or **TOON** — a compact, indentation-based format designed for token-efficient LLM consumption.
 
 ### Why you might need this
 
 - You want machine-readable test results that CI/CD pipelines can consume
 - Your test suite is large and you need token-efficient reports (passed tests excluded by default)
+- You feed test results into an LLM and want to minimise token cost
 - You send test metrics to a remote service or dashboard for trend analysis
 - You run tests in parallel with `pytest-xdist` and need a unified report
 - You need collection errors (import errors, syntax errors) tracked alongside test results
@@ -27,7 +28,7 @@
 
 ## ✨ Features
 
-- **CTRF 1.0.0 compliance**: JSON/YAML reports following the Common Test Results Format standard
+- **CTRF 1.0.0 compliance**: JSON, YAML, or TOON reports following the Common Test Results Format standard
 - **Token-efficient by default**: Passed tests excluded from output; summary counters are always accurate
 - **Independent output filtering**: Separate exclude rules for local file and HTTP export
 - **Rich metadata**: Marks, parametrized params, Allure IDs, and environment name per test
@@ -57,6 +58,8 @@ pytest --beacon
 **2. Custom file and format**
 ```bash
 pytest --beacon --beacon-file=results.json --beacon-format=yaml
+# or for token-efficient LLM consumption:
+pytest --beacon --beacon-file=results.toon --beacon-format=toon
 ```
 
 **3. Send to a remote service**
@@ -111,7 +114,7 @@ pytest --beacon --beacon-console-output --beacon-console-lines=20
 | `--beacon` | off | Enable reporting |
 | `--beacon-file PATH` | `beacon_reports/report-<ts>.json` | Output file. Bare filename → placed in `beacon_reports/` with timestamp. |
 | `--beacon-url URL` | — | Full URL to POST the report to. |
-| `--beacon-format json\|yaml` | `json` | Report serialisation format |
+| `--beacon-format json\|yaml\|toon` | `json` | Report serialisation format |
 | `--beacon-verbose` | off | Include captured stdout/stderr for passed tests |
 | `--beacon-file-exclude-status STATUSES` | `passed` | Comma-separated statuses to omit from the **local file** report. Empty string includes all. |
 | `--beacon-http-exclude-status STATUSES` | `passed` | Comma-separated statuses to omit from the **HTTP export**. Empty string includes all. |
@@ -186,8 +189,8 @@ Pytest:  79 failed, 759 passed, 123 skipped, 3 xfailed, 57 warnings, 12 errors, 
         "trace": "Traceback (most recent call last):\n  ...",
         "failureLocation": { "file": "tests/test_api.py", "line": 38 },
         "marks": ["smoke", "auth"],
-        "params": { "role": "admin" },
-        "allureId": "TC-42",
+        "params": [{"key": "role", "value": "admin"}],
+        "allureId": 42,
         "stdout": "setting up admin session\n",
         "stderr": "",
         "logs": {
@@ -325,8 +328,8 @@ Pytest:  79 failed, 759 passed, 123 skipped, 3 xfailed, 57 warnings, 12 errors, 
                 }
               },
               "marks":    { "type": "array", "items": { "type": "string" }, "description": "pytest marks applied to the test" },
-              "params":   { "type": "object", "description": "Parametrize parameters (key → value)" },
-              "allureId": { "type": "string", "description": "Value of the @allure.id marker" },
+              "params":   { "type": "array", "items": { "type": "object", "required": ["key", "value"], "properties": { "key": { "type": "string" }, "value": { "type": "string" } } }, "description": "Parametrize parameters as a list of {key, value} pairs" },
+              "allureId": { "type": ["string", "integer", "null"], "description": "Value of the @allure.id marker; numeric values are stored as integers" },
               "stdout":   { "type": "string", "description": "Captured stdout; present only with --beacon-verbose" },
               "stderr":   { "type": "string", "description": "Captured stderr; present only with --beacon-verbose" },
               "logs": {
@@ -431,6 +434,230 @@ Pytest:  79 failed, 759 passed, 123 skipped, 3 xfailed, 57 warnings, 12 errors, 
 
 </details>
 
+<details>
+<summary>📄 <b>Example TOON Report</b> (click to expand)</summary>
+
+TOON (Token-Oriented Object Notation) is a whitespace-indented format optimised for LLM token efficiency. Use `--beacon-format=toon` to emit it.
+
+```
+results:
+  tool:
+    name: pytest
+    version: 9.0.0
+  summary:
+    tests: 12
+    passed: 9
+    failed: 2
+    pending: 0
+    skipped: 1
+    error: 0
+    other: 0
+    start: 1700000000000
+    stop: 1700000005000
+  tests[1]:
+    - name: "tests/test_api.py::test_login[admin]"
+      status: failed
+      duration: 142
+      filePath: tests/test_api.py
+      line: 34
+      message: "AssertionError: expected 200, got 401"
+      trace: "Traceback (most recent call last):\n  ..."
+      failureLocation:
+        file: tests/test_api.py
+        line: 38
+      marks[2]: smoke,auth
+      params[1]{key,value}:
+        role,admin
+      allureId: 42
+      stdout: "setting up admin session\n"
+      stderr: ""
+      logs:
+        setup[1]:
+          - level: WARNING
+            message: slow fixture detected
+            logger: app.fixtures
+            timestamp: "2026-05-08T10:00:00+00:00"
+            data:
+              filename: conftest.py
+              lineno: 12
+              extra:
+                fixture: admin_session
+        call[1]{level,message,logger,timestamp,data}:
+          ERROR,unexpected response code 401,app.api,null,null
+      consoleOutput:
+        call:
+          stdout:
+            lines[2]: "request id: abc-123","response code: 401"
+            truncated: false
+            omittedLines: 0
+          stderr:
+            lines[1]: retry exhausted
+            truncated: false
+            omittedLines: 0
+        teardown:
+          stdout:
+            lines[1]: cleanup complete
+            truncated: true
+            omittedLines: 3
+  environment:
+    pythonVersion: 3.12.0
+    pytestVersion: 9.0.0
+    xdistWorkers: 4
+    build: "123"
+    branch: main
+  extra:
+    pluginName: pytest-beacon
+    pluginVersion: 0.5.0
+    ctrf: 1.0.0
+    generatedAt: 1700000005000
+    pytestSummary:
+      failed: 2
+      passed: 9
+      skipped: 1
+      deselected: 0
+      xfailed: 0
+      xpassed: 0
+      warnings: 3
+      error: 0
+      rerun: 0
+    generalLogs[1]{level,message,logger,timestamp,data}:
+      WARNING,deprecated import path used,app.compat,"2026-05-08T10:00:00+00:00",null
+```
+
+</details>
+
+<details>
+<summary>📐 <b>TOON Report Schema</b> (click to expand)</summary>
+
+Type annotations use `<type>` placeholders. `?` marks optional fields (present as `null` when absent). `# comment` lines are not part of the output.
+
+```
+results:
+  tool:
+    name: <string>
+    version: <string>
+  summary:
+    tests: <integer>
+    passed: <integer>
+    failed: <integer>
+    pending: <integer>
+    skipped: <integer>
+    error: <integer>
+    other: <integer>
+    start: <integer>          # epoch ms
+    stop: <integer>           # epoch ms
+  tests[N]:                   # N = number of included test results
+    - name: <string>          # full pytest node ID
+      status: passed|failed|skipped|error|other
+      duration: <number>      # milliseconds
+      filePath: <string|null>?
+      line: <integer|null>?
+      message: <string|null>?
+      trace: <string|null>?
+      failureLocation: <object|null>?
+        file: <string>
+        line: <integer>
+      marks[N]: <string>,...  # N=0 → marks[0]: (empty); primitive inline array
+      params[N]{key,value}:?  # tabular; null when no params
+        <string>,<string>
+        ...
+      allureId: <string|integer|null>?
+      stdout: <string|null>?
+      stderr: <string|null>?
+      logs: <object|null>?    # present only with --beacon-logs
+        setup[N]{level,message,logger,timestamp,data}:   # tabular when data=null for all entries
+          <string>,<string>,<string|null>,<string|null>,<null>
+          ...
+        # OR expanded form when any entry has a non-null data object:
+        setup[N]:
+          - level: <string>
+            message: <string>
+            logger: <string|null>
+            timestamp: <string|null>  # ISO-8601
+            data: <object|null>
+              ...
+        call[N]{level,message,logger,timestamp,data}:    # same rules as setup
+          ...
+        teardown[N]{level,message,logger,timestamp,data}:
+          ...
+      consoleOutput: <object|null>?   # present only with --beacon-console-output
+        setup:?
+          stdout:?
+            lines[N]: <string>,...
+            truncated: <boolean>
+            omittedLines: <integer>
+          stderr:?
+            lines[N]: <string>,...
+            truncated: <boolean>
+            omittedLines: <integer>
+        call:?
+          stdout:?
+            ...
+          stderr:?
+            ...
+        teardown:?
+          stdout:?
+            ...
+          stderr:?
+            ...
+  environment:
+    pythonVersion: <string>
+    pytestVersion: <string>
+    xdistWorkers: <integer>?  # present only when pytest-xdist is active
+    <key>: <string>           # zero or more --beacon-meta pairs
+    ...
+  extra:
+    pluginName: <string>
+    pluginVersion: <string>
+    ctrf: <string>            # always "1.0.0"
+    generatedAt: <integer>    # epoch ms
+    pytestSummary:?           # present only when terminal reporter is available
+      failed: <integer>
+      passed: <integer>
+      skipped: <integer>
+      deselected: <integer>
+      xfailed: <integer>
+      xpassed: <integer>
+      warnings: <integer>
+      error: <integer>
+      rerun: <integer>
+    generalLogs[N]{level,message,logger,timestamp,data}:?   # tabular form
+      <string>,<string>,<string|null>,<string|null>,<null>
+      ...
+    # OR expanded form when any entry has a non-null data object:
+    generalLogs[N]:?
+      - level: <string>
+        message: <string>
+        logger: <string|null>
+        timestamp: <string|null>
+        data: <object|null>
+          ...
+```
+
+</details>
+
+<details>
+<summary>📐 <b>TOON Format Syntax</b> (click to expand)</summary>
+
+TOON uses indentation (2 spaces per level) to express structure. The key encoding rules:
+
+| Construct | TOON syntax | Example |
+| :--- | :--- | :--- |
+| Object field | `key: value` | `status: failed` |
+| Nested object | indented block under `key:` | `failureLocation:\n  file: ...` |
+| String — safe (no special chars) | unquoted | `status: failed` |
+| String — contains spaces / special chars | double-quoted; only `\`, `"`, `\n`, `\r`, `\t` escaped | `message: "expected 200, got 401"` |
+| `null` | `null` | `data: null` |
+| Boolean | `true` / `false` | `truncated: false` |
+| Number | no trailing zeros; whole floats as int | `duration: 142` |
+| Primitive array | `key[N]: v1,v2,...` | `marks[2]: smoke,auth` |
+| Array of uniform objects (all-primitive values) | `key[N]{f1,f2,...}:` header + one row per object | `params[1]{key,value}:\n  role,admin` |
+| Array of objects (non-uniform or nested values) | `key[N]:` header + `- field: value` expanded items | `setup[1]:\n  - level: WARNING\n    message: ...` |
+
+Field order within each object is preserved from the source dict. All optional test and log fields are always emitted (as `null` when absent) so the `tests` array and per-phase log arrays qualify for tabular encoding, which is the primary source of token savings over JSON.
+
+</details>
+
 ## 📤 Remote HTTP Export
 
 When `--beacon-url` is set, a POST request with a JSON body is sent to the specified URL after the run. Export errors are logged and never interrupt test execution.
@@ -447,7 +674,7 @@ When `--beacon-url` is set, a POST request with a JSON body is sent to the speci
       "test_result": "failed",
       "test_duration": 0.142,
       "test_marks": ["smoke", "auth"],
-      "test_params": { "role": "admin" },
+      "test_params": [{"key": "role", "value": "admin"}],
       "test_stacktrace": "Traceback (most recent call last):\n  ...",
       "test_message": "AssertionError: expected 200, got 401",
       "test_allure_id": "TC-42",
@@ -515,7 +742,7 @@ When `--beacon-url` is set, a POST request with a JSON body is sent to the speci
           "test_result":   { "type": "string",           "enum": ["passed", "failed", "skipped", "error", "other"] },
           "test_duration": { "type": "number",           "description": "Test duration in seconds" },
           "test_marks":    { "type": "array",            "items": { "type": "string" }, "description": "pytest marks applied to the test" },
-          "test_params":   { "type": "object",           "description": "Parametrize parameters (key → value)" },
+          "test_params":   { "type": "array",            "items": { "type": "object", "required": ["key", "value"], "properties": { "key": { "type": "string" }, "value": { "type": "string" } } }, "description": "Parametrize parameters as a list of {key, value} pairs" },
           "test_stacktrace": { "type": ["string", "null"], "description": "Full traceback string" },
           "test_message":  { "type": ["string", "null"], "description": "Short failure or skip reason" },
           "test_allure_id": { "type": ["string", "null"], "description": "Value of the @allure.id marker" },

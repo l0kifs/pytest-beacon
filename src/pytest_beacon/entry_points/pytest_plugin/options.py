@@ -35,8 +35,8 @@ def add_options(parser: pytest.Parser) -> None:
         "--beacon-format",
         action="store",
         default="json",
-        choices=["json", "yaml"],
-        help="Report serialisation format: json (default) or yaml",
+        choices=["json", "yaml", "toon"],
+        help="Report serialisation format: json (default), yaml, or toon",
     )
     group.addoption(
         "--beacon-verbose",

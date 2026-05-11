@@ -57,7 +57,7 @@ class TestLogsDisabledByDefault:
         pytester.runpytest("--beacon", "--beacon-file-exclude-status=")
         data = _load_json_report(pytester)
         for t in _tests(data):
-            assert "logs" not in t
+            assert t.get("logs") is None
 
     def test_no_general_logs_key_without_flag(self, pytester):
         """Without --beacon-logs the 'generalLogs' key must not appear in extra."""
@@ -238,7 +238,7 @@ class TestPerPhaseLogCapture:
         pytester.runpytest("--beacon", "--beacon-logs", "--beacon-file-exclude-status=",
                            "--beacon-logs-level=WARNING")
         data = _load_json_report(pytester)
-        assert "logs" not in _tests(data)[0]
+        assert _tests(data)[0].get("logs") is None
 
     def test_teardown_phase_logs_captured(self, pytester):
         """Logs emitted during fixture teardown go to 'teardown' key."""
@@ -445,7 +445,7 @@ class TestLogLevelFiltering:
         pytester.runpytest("--beacon", "--beacon-logs", "--beacon-file-exclude-status=",
                            "--beacon-logs-level=WARNING", "--log-cli-level=DEBUG")
         data = _load_json_report(pytester)
-        logs = _tests(data)[0].get("logs", {})
+        logs = _tests(data)[0].get("logs") or {}
         assert "call" not in logs
 
 
@@ -493,7 +493,7 @@ class TestLogsMaxEntries:
                            "--beacon-logs-level=WARNING", "--beacon-logs-max=3",
                            "--log-cli-level=WARNING")
         data = _load_json_report(pytester)
-        logs = _tests(data)[0].get("logs", {})
+        logs = _tests(data)[0].get("logs") or {}
         for phase in ("setup", "call", "teardown"):
             entries = logs.get(phase, [])
             assert len(entries) <= 3, f"{phase} exceeded max: {len(entries)}"
@@ -542,7 +542,7 @@ class TestLogsMaxEntries:
                            "--beacon-logs-level=WARNING", "--beacon-logs-max=0",
                            "--log-cli-level=WARNING")
         data = _load_json_report(pytester)
-        logs = _tests(data)[0].get("logs", {})
+        logs = _tests(data)[0].get("logs") or {}
         for phase in ("setup", "call", "teardown"):
             assert logs.get(phase, []) == []
 
@@ -880,7 +880,7 @@ class TestLogsWithXdist:
                            "--log-cli-level=WARNING", "-n", "2")
         data = _load_json_report(pytester)
         for t in _tests(data):
-            assert "logs" not in t
+            assert t.get("logs") is None
 
 
 # ---------------------------------------------------------------------------

@@ -198,16 +198,17 @@ class TestFormatTest:
     def test_optional_fields_absent_when_none(self):
         r = _make(TestStatus.PASSED)
         item = _format_test(r)
-        assert "filePath" not in item
-        assert "line" not in item
-        assert "message" not in item
-        assert "trace" not in item
-        assert "failureLocation" not in item
-        assert "marks" not in item
-        assert "params" not in item
-        assert "allureId" not in item
-        assert "stdout" not in item
-        assert "stderr" not in item
+        # Optional fields are always present; null when no value
+        assert item["filePath"] is None
+        assert item["line"] is None
+        assert item["message"] is None
+        assert item["trace"] is None
+        assert item["failureLocation"] is None
+        assert item["marks"] is None
+        assert item["params"] is None
+        assert item["allureId"] is None
+        assert item["stdout"] is None
+        assert item["stderr"] is None
 
     def test_file_path_and_line_present(self):
         r = _make(TestStatus.FAILED, file_path="tests/t.py", line=10, nodeid="tests/t.py::test_failed")
@@ -232,7 +233,8 @@ class TestFormatTest:
         r = _make(TestStatus.PASSED, marks=["smoke"], params={"x": 1})
         item = _format_test(r)
         assert item["marks"] == ["smoke"]
-        assert item["params"] == {"x": 1}
+        # params is normalised to a list of {key, value} dicts for uniform encoding
+        assert item["params"] == [{"key": "x", "value": "1"}]
 
     def test_allure_id(self):
         r = _make(TestStatus.PASSED, allure_id="TC-99")
@@ -242,7 +244,8 @@ class TestFormatTest:
     def test_allure_id_absent_when_none(self):
         r = _make(TestStatus.PASSED)
         item = _format_test(r)
-        assert "allureId" not in item
+        # allureId is always present; null when no mark
+        assert item["allureId"] is None
 
     def test_stdout_stderr_in_verbose(self):
         r = _make(TestStatus.PASSED, stdout="hello\n", stderr="err\n")

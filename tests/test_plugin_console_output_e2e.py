@@ -22,7 +22,7 @@ class TestConsoleOutputCapture:
         """)
         pytester.runpytest("--beacon", "--beacon-file-exclude-status=")
         data = _load_json_report(pytester)
-        assert "consoleOutput" not in _tests(data)[0]
+        assert _tests(data)[0].get("consoleOutput") is None
 
     def test_console_output_captured_with_flag(self, pytester):
         pytester.makepyfile("""

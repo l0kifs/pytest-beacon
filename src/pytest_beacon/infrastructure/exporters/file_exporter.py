@@ -1,5 +1,5 @@
 """
-File exporter: writes CTRF report to a JSON or YAML file.
+File exporter: writes CTRF report to a JSON, YAML, or TOON file.
 """
 
 import json
@@ -9,18 +9,20 @@ from typing import Any
 
 import yaml
 
+from pytest_beacon.infrastructure.formatters.toon import encode as toon_encode
 from pytest_beacon.infrastructure.observability.logging import get_logger
 
 log = get_logger(__name__)
 
 _DEFAULT_DIR = "beacon_reports"
+_VALID_FORMATS = ("json", "yaml", "toon")
 
 
 class FileExporter:
-    """Writes a CTRF report dict to disk as JSON or YAML."""
+    """Writes a CTRF report dict to disk as JSON, YAML, or TOON."""
 
     def __init__(self, output_file: str | None = None, fmt: str = "json") -> None:
-        self._fmt = fmt if fmt in ("json", "yaml") else "json"
+        self._fmt = fmt if fmt in _VALID_FORMATS else "json"
         self._output_path = self._resolve_path(output_file)
 
     # ------------------------------------------------------------------
@@ -48,8 +50,10 @@ class FileExporter:
                         allow_unicode=True,
                         sort_keys=False,
                     )
+                elif self._fmt == "toon":
+                    fh.write(toon_encode(report))
                 else:
-                    json.dump(report, fh, indent=2, ensure_ascii=False)
+                    json.dump(report, fh, separators=(",", ":"), ensure_ascii=False)
         except Exception:
             log.exception(
                 "beacon.file_exporter: failed to write report",
