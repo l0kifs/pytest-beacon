@@ -328,6 +328,21 @@ class TestSanitizeParam:
 
 
 class TestExtractAllureId:
+    def test_id_encoded_in_marker_name(self):
+        mark = MagicMock()
+        mark.name = "test_id_33158"
+        item = MagicMock()
+        item.iter_markers.return_value = [mark]
+        assert _extract_allure_id(item) == "33158"
+
+    @pytest.mark.parametrize("name", ["test_id_", "test_id_abc", "test_id_12_suffix"])
+    def test_invalid_encoded_id_is_ignored(self, name):
+        mark = MagicMock()
+        mark.name = name
+        item = MagicMock()
+        item.iter_markers.return_value = [mark]
+        assert _extract_allure_id(item) is None
+
     def test_allure_id_mark(self):
         m = MagicMock()
         m.name = "allure_id"

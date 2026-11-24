@@ -769,6 +769,9 @@ def _extract_allure_id(item: pytest.Item) -> str | None:
             if mark.name in ("allure_id", "allure.id", "id"):
                 if mark.args:
                     return str(mark.args[0])
+            match = re.fullmatch(r"test_id_([0-9]+)", mark.name)
+            if match:
+                return match.group(1)
     except Exception:
         pass
     return None
