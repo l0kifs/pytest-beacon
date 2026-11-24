@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.1 - 2026-11-24
+
+### Fixes
+
+- Read Allure IDs encoded in pytest marker names (e.g. `@pytest.mark.test_id_33158` → `allureId: 33158`). Works in serial and `pytest-xdist` runs. Malformed names such as `test_id_abc` are ignored.
+
 ## 0.6.0 - 2026-05-11
 
 ### Features
