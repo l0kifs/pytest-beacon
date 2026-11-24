@@ -420,6 +420,26 @@ class TestTestMetadataCapture:
         tests = _results(data)["tests"]
         assert tests[0].get("allureId") == "TC-42"
 
+    @pytest.mark.parametrize("marker", ["allure_id_33158", "test_id_33158"])
+    @pytest.mark.parametrize("parallel", [False, True], ids=["serial", "xdist"])
+    def test_encoded_allure_id_in_report(self, pytester, marker, parallel):
+        pytester.makepyfile(f'''
+            import pytest
+
+            @pytest.mark.{marker}
+            @pytest.mark.parametrize("value", [1, 2])
+            def test_case(value):
+                assert value > 0
+        ''')
+        args = ["--beacon", "--beacon-file-exclude-status="]
+        if parallel:
+            args.extend(["-n", "2"])
+        result = pytester.runpytest_subprocess(*args)
+        result.assert_outcomes(passed=2)
+        tests = _results(_load_json_report(pytester))["tests"]
+        assert len(tests) == 2
+        assert {test["allureId"] for test in tests} == {33158}
+
     def test_allure_id_absent_when_no_mark(self, pytester):
         """allureId must be null in the report when no allure mark is used."""
         pytester.makepyfile("def test_plain(): pass")

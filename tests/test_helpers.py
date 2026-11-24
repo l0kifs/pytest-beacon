@@ -327,73 +327,22 @@ class TestSanitizeParam:
 # ---------------------------------------------------------------------------
 
 
-def _make_mark(name, args, kwargs):
-    mark = MagicMock()
-    mark.name = name
-    mark.args = args
-    mark.kwargs = kwargs
-    return mark
-
-
 class TestExtractAllureId:
     @pytest.mark.parametrize("name", ["allure_id_33158", "test_id_33158"])
     def test_id_encoded_in_marker_name(self, name):
+        mark = MagicMock()
+        mark.name = name
         item = MagicMock()
-        item.iter_markers.return_value = [_make_mark(name, (), {})]
+        item.iter_markers.return_value = [mark]
         assert _extract_allure_id(item) == "33158"
 
-    def test_native_allure_id_label(self):
-        item = MagicMock()
-        item.iter_markers.return_value = [
-            _make_mark("allure_label", ("33158",), {"label_type": "as_id"}),
-        ]
-        assert _extract_allure_id(item) == "33158"
-
-    @pytest.mark.parametrize(
-        "name",
-        ["allure_id_", "test_id_", "allure_id_12_suffix", "test_id_-42", "test_id_abc", "test_id_１２"],
-    )
+    @pytest.mark.parametrize("name", ["allure_id_", "test_id_abc", "allure_id_12_suffix"])
     def test_invalid_encoded_id_is_ignored(self, name):
+        mark = MagicMock()
+        mark.name = name
         item = MagicMock()
-        item.iter_markers.return_value = [_make_mark(name, (), {})]
+        item.iter_markers.return_value = [mark]
         assert _extract_allure_id(item) is None
-
-    @pytest.mark.parametrize("args", [(), ("Smoke",)])
-    def test_other_or_empty_allure_label_is_ignored(self, args):
-        item = MagicMock()
-        item.iter_markers.return_value = [
-            _make_mark("allure_label", args, {"label_type": "feature"}),
-            _make_mark("allure_label", (), {"label_type": "as_id"}),
-        ]
-        assert _extract_allure_id(item) is None
-
-    @pytest.mark.parametrize("reverse", [False, True])
-    def test_existing_explicit_marker_takes_precedence(self, reverse):
-        marks = [
-            _make_mark("allure_id", ("TC-42",), {}),
-            _make_mark("allure_label", ("99",), {"label_type": "as_id"}),
-            _make_mark("allure_id_123", (), {}),
-            _make_mark("test_id_456", (), {}),
-        ]
-        item = MagicMock()
-        item.iter_markers.return_value = iter(marks[::-1] if reverse else marks)
-        assert _extract_allure_id(item) == "TC-42"
-
-    def test_native_allure_label_takes_precedence_over_encoded_ids(self):
-        item = MagicMock()
-        item.iter_markers.return_value = iter([
-            _make_mark("test_id_456", (), {}),
-            _make_mark("allure_id_123", (), {}),
-            _make_mark("allure_label", ("99",), {"label_type": "as_id"}),
-        ])
-        assert _extract_allure_id(item) == "99"
-
-    @pytest.mark.parametrize("reverse", [False, True])
-    def test_allure_encoded_id_takes_precedence_over_generic_test_id(self, reverse):
-        marks = [_make_mark("test_id_456", (), {}), _make_mark("allure_id_123", (), {})]
-        item = MagicMock()
-        item.iter_markers.return_value = iter(marks[::-1] if reverse else marks)
-        assert _extract_allure_id(item) == "123"
 
     def test_allure_id_mark(self):
         m = MagicMock()

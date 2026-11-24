@@ -764,26 +764,14 @@ def _sanitize_param(value: Any) -> Any:
 
 
 def _extract_allure_id(item: pytest.Item) -> str | None:
-    """Prefer explicit IDs, then native Allure labels, then numeric marker suffixes."""
     try:
-        marks = list(item.iter_markers())
-        for mark in marks:
+        for mark in item.iter_markers():
             if mark.name in ("allure_id", "allure.id", "id"):
                 if mark.args:
                     return str(mark.args[0])
-        for mark in marks:
-            if (
-                mark.name == "allure_label"
-                and mark.kwargs.get("label_type") == "as_id"
-                and mark.args
-            ):
-                return str(mark.args[0])
-        for prefix in ("allure_id_", "test_id_"):
-            for mark in marks:
-                if mark.name.startswith(prefix):
-                    value = mark.name[len(prefix):]
-                    if re.fullmatch(r"[0-9]+", value):
-                        return value
+            match = re.fullmatch(r"(?:allure_id|test_id)_([0-9]+)", mark.name)
+            if match:
+                return match.group(1)
     except Exception:
         pass
     return None
