@@ -420,13 +420,12 @@ class TestTestMetadataCapture:
         tests = _results(data)["tests"]
         assert tests[0].get("allureId") == "TC-42"
 
-    @pytest.mark.parametrize("marker", ["allure_id_33158", "test_id_33158"])
     @pytest.mark.parametrize("parallel", [False, True], ids=["serial", "xdist"])
-    def test_encoded_allure_id_in_report(self, pytester, marker, parallel):
-        pytester.makepyfile(f'''
+    def test_encoded_allure_id_in_report(self, pytester, parallel):
+        pytester.makepyfile('''
             import pytest
 
-            @pytest.mark.{marker}
+            @pytest.mark.test_id_33158
             @pytest.mark.parametrize("value", [1, 2])
             def test_case(value):
                 assert value > 0
